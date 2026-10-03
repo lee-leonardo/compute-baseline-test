@@ -8,6 +8,18 @@ Results describe a workload/runtime/device combination, not a universal hardware
 Architecture: **harness → runtime adapter → workload → report**. No model server,
 cluster, dashboard, or cloud account is required. Downloads happen before measured runs.
 
+## Train a classifier and reuse it
+
+```sh
+uv run --locked --extra cpu runtime-bench classification train --device cpu \
+  --checkpoint results/classifier.pt
+uv run --locked --extra cpu runtime-bench classification infer --device cpu \
+  --checkpoint results/classifier.pt
+```
+
+See the [classification walkthrough](docs/classification.md) for CSV inputs and timing,
+and the [CLI guide](docs/cli.md) for help, defaults, and debugging.
+
 ## Start with an offline experiment
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), clone the repo,
@@ -15,7 +27,7 @@ and run from its root:
 
 ```sh
 uv sync --locked --extra cpu
-uv run --locked --extra cpu runtime-bench-suite experiments/smoke.toml \
+uv run --locked --extra cpu runtime-bench suite experiments/smoke.toml \
   --node node-a --condition idle
 ```
 
@@ -35,14 +47,14 @@ The label records context; the harness does not start services or measure their 
 
 ```sh
 # Supply actual successful report paths with matching work and source revisions.
-uv run --locked --extra cpu runtime-bench-compare BASELINE.json CANDIDATE.json
+uv run --locked --extra cpu runtime-bench compare BASELINE.json CANDIDATE.json
 
 # Capacity outcomes, including failed runs, without a speedup claim.
-uv run --locked --extra cpu runtime-bench-compare --capacity BASELINE.json CANDIDATE.json
+uv run --locked --extra cpu runtime-bench compare --capacity BASELINE.json CANDIDATE.json
 
 # One row per trial; failures get a row without invented measurements.
 # The numeric case directory prevents including suite index.json files.
-uv run --locked --extra cpu runtime-bench-export \
+uv run --locked --extra cpu runtime-bench export \
   results/suite-*/*/*.json --output results/trials.csv
 ```
 
@@ -56,7 +68,7 @@ modes are separate experiments.
 
 | Family | Implemented | Boundary |
 | --- | --- | --- |
-| Classification | sklearn full fit + prediction; synthetic/CSV MLP train or infer | MLP inference uses initialized weights; no saved-checkpoint lifecycle yet |
+| Classification | MLP training + saved-checkpoint inference; separate sklearn baseline | Checkpoint lifecycle supports PyTorch CPU/CUDA/MPS; labeled held-out evaluation |
 | NLP / embeddings | Pretrained embedding inference; fill-mask inference; classification fine-tuning | Embedding training is not implemented |
 | Sequence learning | Small news Transformer; synthetic stateful memory Transformer | Learning examples, not pretrained language-model serving |
 

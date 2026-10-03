@@ -41,6 +41,7 @@ The offline tests use tiny BERT fixtures; they do not validate every external ch
 
 | Execution subsystem | Tasks | Device arguments | Packages | Precision |
 | --- | --- | --- | --- | --- |
+| PyTorch classification lifecycle | `classification train/infer` | `cpu`, `cuda`, `mps`, `auto` | `cpu` or `cuda` | FP32; FP16/BF16 on compatible CUDA |
 | sklearn | `classify` | `cpu`, `auto` → CPU | `cpu` or `cuda`, plus `pipeline` | FP32 setting only |
 | PyTorch learning adapters | `coffee`, `smoke`, `news`, `stateful` | `cpu`, `cuda`, `mps`, `auto` | `cpu` or `cuda` | FP32; FP16/BF16 on compatible CUDA |
 | PyTorch Transformers adapter | `embeddings`, `infer`, `finetune` | `cpu`, `cuda`, `mps`, `auto` | `cpu` or `cuda`, plus `pipeline` | FP32; FP16/BF16 on compatible CUDA |

@@ -13,3 +13,6 @@ dist/
 # Generated local data and results, independent of environment values.
 /data/
 /results/
+
+# Generated classification checkpoint weights.
+*.pt

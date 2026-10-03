@@ -14,6 +14,7 @@ EXECUTION_KEYS = {
     "output",
     "data",
     "model_cache",
+    "checkpoint",
     "model",
     "node",
     "condition",
@@ -77,6 +78,7 @@ def export(paths, output):
 
 
 def main():
+    """Export report paths supplied on the command line; exit 2 on invalid input."""
     p = argparse.ArgumentParser(description="Export benchmark JSON reports to one row per trial")
     p.add_argument("reports", nargs="+", type=Path)
     p.add_argument("--output", required=True, type=Path)

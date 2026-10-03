@@ -1,8 +1,14 @@
+"""Command parsing, configuration validation, workload dispatch, and report output.
+
+Use ``main`` for the public CLI and ``parser``/``run`` for flat manifest cases.
+Device execution lives in runtime adapters; trial timing lives in ``micro`` and
+``operational``. Expected failures produce a report and exit status 2.
+"""
+
 import argparse
 import json
-import math
 import os
-import statistics
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,17 +17,20 @@ import psutil
 import torch
 
 from .hardware import command, identify, select_device
-from .torch_runtime import TorchRuntime
-from .workloads import build
+from .micro import run_micro
 from .profiling import Profiler
 from .operational import TASKS
 
 
 def parser():
+    """Build the backward-compatible flat parser used by manifest cases."""
     p = argparse.ArgumentParser(
-        description="Test hardware differences across Apple, NVIDIA RTX and CPU configurations using ML workloads"
+        description="Run one workload. Prefer classification train/infer for checkpoint workflows.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("task", choices=["coffee", "news", "stateful", "smoke", *TASKS])
+    p.add_argument(
+        "task", choices=["classification", "coffee", "news", "stateful", "smoke", *TASKS]
+    )
     p.add_argument(
         "--runtime",
         choices=["torch", "mlx"],
@@ -68,115 +77,36 @@ def parser():
         help="Local assets or minilm/distilbert/bert; defaults: embeddings=minilm, "
         "infer/finetune=distilbert. MiniLM does not support fill-mask inference.",
     )
+    p.add_argument(
+        "--checkpoint", type=Path, help="Classification: output for train, input for infer"
+    )
     p.add_argument("--model-cache", type=Path, default=Path("data/models"))
+    descriptions = {
+        "task": "Workload to execute (classify is the separate sklearn baseline)",
+        "device": "Execution device; auto selects an available backend",
+        "output": "Directory for text and JSON reports",
+        "profile": "Diagnostic NLP phase timing adds synchronization overhead",
+        "data": "Input CSV; required for CSV and text workloads",
+        "target": "Categorical target column in a tabular CSV",
+        "mode": "Learning examples: train or infer; NLP tasks have fixed modes",
+        "precision": "FP32 baseline; FP16/BF16 require compatible CUDA",
+        "batch": "Examples per measured batch",
+        "width": "Learning model hidden width; Transformers require a multiple of four",
+        "length": "Padded sequence length for text/sequence workloads",
+        "steps": "Batches per trial; classify uses boosting iterations",
+        "warmup": "Discarded warmup batches (micro: 5, operational: 1)",
+        "repeats": "Independent reset trials (micro: 3, operational: 1)",
+        "seed": "Initialization and split seed",
+        "model_cache": "Local pretrained model cache populated by fetch",
+    }
+    for action in p._actions:
+        if action.help is None:
+            action.help = descriptions.get(action.dest)
     return p
 
 
-def run_micro(args):
-    started = time.perf_counter()
-    if args.runtime == "mlx":
-        from .mlx_runtime import MLXRuntime, validate
-
-        validate(args)
-        adapter = MLXRuntime
-    else:
-        adapter = TorchRuntime
-    torch.set_num_threads(args.threads)
-    torch.manual_seed(args.seed)
-    model, train, test, metadata = build(args)
-    runtime = adapter(args, model)
-    stateful = args.task == "stateful"
-
-    def batch(data, step):
-        x, y = data
-        if stateful:
-            index = step % len(x)
-            return x[index], y[index]
-        ids = (torch.arange(args.batch) + step * args.batch) % len(x)
-        return x[ids], y[ids]
-
-    runtime.synchronize()
-    setup_seconds = time.perf_counter() - started
-    trials = []
-    for _ in range(args.repeats):
-        runtime.reset()
-        for i in range(args.warmup):
-            x, y = batch(train, i)
-            runtime.step(*runtime.prepare(x, y))
-        runtime.synchronize()
-        # Warmup compiles/initializes kernels, but must not change starting weights/state.
-        runtime.reset()
-        runtime.reset_peak_memory()
-        latencies, transfers, losses, rss = [], [], [], []
-        trial_start = time.perf_counter()
-        for i in range(args.steps):
-            x, y = batch(train, i)
-            runtime.synchronize()
-            start = time.perf_counter()
-            x, y = runtime.prepare(x, y)
-            runtime.synchronize()
-            transfers.append(time.perf_counter() - start)
-            start = time.perf_counter()
-            losses.append(runtime.step(x, y))
-            runtime.synchronize()
-            latencies.append(time.perf_counter() - start)
-            rss.append(psutil.Process().memory_info().rss)
-        total = time.perf_counter() - trial_start
-        loss_values = runtime.losses(losses)
-        final_loss = loss_values[-1]
-        if not all(math.isfinite(loss) for loss in loss_values):
-            raise ValueError("Non-finite loss; result is invalid")
-        trials.append(
-            {
-                "compute_median_ms": statistics.median(latencies) * 1000,
-                "compute_p95_ms": sorted(latencies)[max(0, int(len(latencies) * 0.95 + 0.999) - 1)]
-                * 1000,
-                "compute_samples_per_second": args.batch * args.steps / sum(latencies),
-                "loop_samples_per_second": args.batch * args.steps / total,
-                "transfer_total_seconds": sum(transfers),
-                "loop_seconds": total,
-                "final_loss": final_loss,
-                "process_rss_sampled_peak_bytes": max(rss),
-                **runtime.memory(),
-            }
-        )
-    runtime.begin_evaluation()
-    correct, count, loss_sum = 0, 0, 0.0
-    iterations = len(test[0]) if stateful else (len(test[0]) + args.batch - 1) // args.batch
-    for i in range(iterations):
-        if stateful:
-            x, y = batch(test, i)
-        else:
-            x, y = (t[i * args.batch : (i + 1) * args.batch] for t in test)
-        batch_correct, batch_count, batch_loss = runtime.score(*runtime.prepare(x, y))
-        if stateful and i == 0:
-            continue  # No preceding chunk exists at the start of a stream.
-        correct += batch_correct
-        count += batch_count
-        loss_sum += batch_loss * batch_count
-    if not count or not math.isfinite(loss_sum):
-        raise ValueError("Invalid evaluation outputs; result is invalid")
-    wall_seconds = time.perf_counter() - started
-    config = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}
-    return {
-        "schema_version": 1,
-        "utc": datetime.now(timezone.utc).isoformat(),
-        "git_commit": command("git", "rev-parse", "HEAD"),
-        "git_dirty": bool(command("git", "status", "--porcelain")),
-        "runtime": runtime.name,
-        "device": runtime.device_name,
-        "hardware": runtime.hardware(),
-        "config": config,
-        "dataset": metadata,
-        "parameters": runtime.parameters,
-        "setup_seconds": setup_seconds,
-        "wall_seconds": wall_seconds,
-        "quality": {"accuracy": correct / count, "cross_entropy": loss_sum / count},
-        "trials": trials,
-    }
-
-
 def run(args):
+    """Resolve defaults, validate a request, sample resources, and dispatch one job."""
     if args.profile == "diagnostic" and args.task not in ("embeddings", "infer", "finetune"):
         raise ValueError("Diagnostic phase profiling supports embeddings, infer and finetune")
     args.mode = args.mode or ("infer" if args.task in ("infer", "embeddings") else "train")
@@ -190,7 +120,7 @@ def run(args):
             raise ValueError(f"--{name} must be positive")
     if args.warmup < 0:
         raise ValueError("--warmup must be nonnegative")
-    if args.width % 4:
+    if args.task in ("news", "stateful") and args.width % 4:
         raise ValueError("--width must be divisible by 4")
     if args.task in TASKS and args.mode != (
         "infer" if args.task in ("infer", "embeddings") else "train"
@@ -201,6 +131,12 @@ def run(args):
     # Classification never samples an unrelated GPU selected by auto.
     if args.task == "classify" and args.device == "auto":
         args.device = "cpu"
+    if args.task == "classification":
+        from .classification import validate
+
+        validate(args)
+    elif args.checkpoint is not None:
+        raise ValueError("--checkpoint is supported only by classification")
     operation_start = time.perf_counter()
     torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
@@ -232,6 +168,7 @@ def run(args):
 
 
 def save_failure(args, exc):
+    """Write a failed outcome without changing the requested execution backend."""
     args.output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     stem = args.output / f"{stamp}-{args.task}-failed"
@@ -275,6 +212,7 @@ def save_failure(args, exc):
 
 
 def save(result, output):
+    """Write machine-readable JSON and a human-readable summary; return the text path."""
     output.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     stem = output / f"{stamp}-{result['config']['task']}-{result['device']}"
@@ -296,6 +234,8 @@ def save(result, output):
         "quality=" + json.dumps(result["quality"]),
         "resources=" + json.dumps(result.get("resources", {})),
     ]
+    if result.get("checkpoint"):
+        lines.append("checkpoint=" + json.dumps(result["checkpoint"]))
     for i, trial in enumerate(result["trials"], 1):
         lines.append(f"trial={i} " + " ".join(f"{k}={v}" for k, v in trial.items()))
     lines.append(
@@ -306,12 +246,149 @@ def save(result, output):
     return stem.with_suffix(".txt")
 
 
+def classification_parser():
+    """Expose only classification options, with separate train/infer help pages.
+
+    Both subcommands resolve to the same flat Namespace as manifest cases. The
+    inference page omits architecture and preprocessing knobs because the saved
+    checkpoint owns those values.
+    """
+    flat = parser()
+    defaults = vars(flat.parse_args(["classification"]))
+    p = argparse.ArgumentParser(
+        prog="runtime-bench classification",
+        description="Train a tabular MLP or benchmark its saved weights on held-out data.",
+    )
+    modes = p.add_subparsers(dest="mode", required=True)
+    shared = {
+        "device",
+        "precision",
+        "batch",
+        "steps",
+        "warmup",
+        "repeats",
+        "threads",
+        "output",
+        "node",
+        "condition",
+        "data",
+        "checkpoint",
+    }
+    for mode in ("train", "infer"):
+        sub = modes.add_parser(
+            mode,
+            help="Fit and save an MLP" if mode == "train" else "Load and benchmark an MLP",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        )
+        sub.set_defaults(**(defaults | {"mode": mode}))
+        groups = {
+            "data": sub.add_argument_group("data and checkpoint"),
+            "execution": sub.add_argument_group("execution"),
+            "budget": sub.add_argument_group("work budget"),
+            "reports": sub.add_argument_group("reports and labels"),
+        }
+        selected = shared | (
+            {"target", "features", "width", "seed", "synthetic_data"} if mode == "train" else set()
+        )
+        for action in flat._actions:
+            if action.dest not in selected:
+                continue
+            kwargs = {"default": action.default, "help": action.help}
+            if isinstance(action, argparse._StoreTrueAction):
+                kwargs["action"] = "store_true"
+            else:
+                kwargs.update(type=action.type, choices=action.choices)
+            focused_help = {
+                "data": "Original labeled CSV; omit for the synthetic fixture",
+                "steps": "Measured batches per reset trial",
+                "warmup": "Discarded warmup batches before each measured trial",
+                "repeats": "Independent trials, each reset to the same starting weights",
+            }
+            if action.dest in focused_help:
+                kwargs["help"] = focused_help[action.dest]
+            if action.dest in ("warmup", "repeats"):
+                kwargs["default"] = 5 if action.dest == "warmup" else 3
+            if action.dest == "device":
+                kwargs["choices"] = ["auto", "cpu", "cuda", "mps"]
+            if action.dest == "checkpoint":
+                kwargs["required"] = mode == "infer"
+                kwargs["help"] = (
+                    "New checkpoint path (default: timestamped file in output)"
+                    if mode == "train"
+                    else "Checkpoint written by classification train"
+                )
+            group = (
+                "data"
+                if action.dest in ("data", "target", "features", "checkpoint", "synthetic_data")
+                else "reports"
+                if action.dest in ("output", "node", "condition")
+                else "execution"
+                if action.dest in ("device", "precision", "threads")
+                else "budget"
+            )
+            groups[group].add_argument(*action.option_strings, **kwargs)
+    return p
+
+
+def command_parser():
+    """Build the short command index; individual commands own their detailed help."""
+    p = argparse.ArgumentParser(
+        prog="runtime-bench",
+        description="Reproducible ML workload profiling on local CPU and GPU runtimes.",
+        epilog="Use runtime-bench COMMAND --help. Existing flat workload commands remain supported.",
+    )
+    commands = p.add_subparsers(dest="command")
+    for name, help_text in {
+        "classification": "Train a classifier or infer from a saved checkpoint",
+        "run": "Run an existing workload with advanced options",
+        "suite": "Run a TOML experiment manifest",
+        "fetch": "Download dataset or pretrained model assets",
+        "compare": "Compare two report files",
+        "export": "Export report files to per-trial CSV",
+    }.items():
+        commands.add_parser(name, help=help_text, add_help=False)
+    return p
+
+
 def main():
-    p = parser()
-    args = p.parse_args()
+    """Dispatch a public command; preserve old entry points and failure exit codes.
+
+    Argument errors exit 2. Expected runtime errors also exit 2 after writing a
+    failure report. Suite commands retain their own exit 1 for failed cases.
+    """
+    argv = sys.argv[1:]
+    if not argv or argv[0] in ("-h", "--help"):
+        command_parser().print_help()
+        return
+    if argv[0] in ("suite", "fetch", "compare", "export"):
+        from . import compare, experiments, model_specs, reporting
+
+        entry = {
+            "suite": experiments.main,
+            "fetch": model_specs.main,
+            "compare": compare.main,
+            "export": reporting.main,
+        }[argv[0]]
+        original = sys.argv
+        try:
+            sys.argv = [f"runtime-bench {argv[0]}", *argv[1:]]
+            return entry()
+        finally:
+            sys.argv = original
+    if argv[0] == "classification":
+        # Flat form remains available for manifests: classification --mode train ...
+        if len(argv) > 1 and argv[1] not in ("train", "infer", "-h", "--help"):
+            p, arguments = parser(), argv
+        else:
+            p, arguments = classification_parser(), argv[1:]
+    else:
+        p, arguments = parser(), argv[1:] if argv[0] == "run" else argv
+    args = p.parse_args(arguments)
     try:
         result = run(args)
         print(save(result, args.output))
+        if result.get("checkpoint"):
+            print(f"Checkpoint: {result['checkpoint']['path']}")
     except (ValueError, RuntimeError, OSError, ImportError, MemoryError) as exc:
         path = save_failure(args, exc)
         p.exit(2, f"workload failed: {exc}\nFailure report: {path}\n")

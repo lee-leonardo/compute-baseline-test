@@ -103,6 +103,7 @@ def capacity_line(report):
 
 
 def main():
+    """Parse report paths, print compatible ratios, and exit 2 on invalid comparisons."""
     p = argparse.ArgumentParser(description="Candidate gains relative to a matching baseline")
     p.add_argument("baseline", type=Path)
     p.add_argument("candidate", type=Path)

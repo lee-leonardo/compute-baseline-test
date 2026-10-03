@@ -13,6 +13,7 @@ from .cli import parser
 
 
 def expand(path):
+    """Validate TOML options and expand sweeps before starting any child process."""
     manifest = tomllib.loads(path.read_text())
     if set(manifest) - {"version", "defaults", "cases"} or manifest.get("version") != 1:
         raise ValueError("Expected manifest version=1 with defaults and cases")
@@ -36,7 +37,7 @@ def expand(path):
         sweep = case.pop("sweep", {})
         config = defaults | case
         task = config.pop("task", None)
-        if task not in cli._actions[1].choices:
+        if task not in next(a.choices for a in cli._actions if a.dest == "task"):
             raise ValueError(f"Unknown task in {name}: {task}")
         if set(config) - allowed:
             raise ValueError(f"Unknown or reserved options in {name}: {set(config) - allowed}")
@@ -74,6 +75,7 @@ def expand(path):
 
 
 def execute(cases, output, node, condition):
+    """Run cases sequentially, preserving logs and an incremental outcome index."""
     output.mkdir(parents=True, exist_ok=True)
     root = Path(tempfile.mkdtemp(prefix="suite-", dir=output))
     outcomes = []
@@ -123,6 +125,7 @@ def execute(cases, output, node, condition):
 
 
 def main():
+    """Parse suite arguments; exit 1 for case failures and 2 for invalid manifests."""
     p = argparse.ArgumentParser(description="Run a reproducible experiment manifest sequentially")
     p.add_argument("manifest", type=Path)
     p.add_argument("--node", required=True, help="User-supplied public-safe node label")

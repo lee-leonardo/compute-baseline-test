@@ -1,5 +1,9 @@
 # Installation and task reference
 
+For the simplified command index and checkpoint workflow, start with the
+[CLI guide](cli.md) and [classification walkthrough](classification.md). The commands
+below remain supported as the advanced/legacy task interface.
+
 A small uv project to **test hardware differences using representative ML workloads**.
 Compare Apple Silicon, NVIDIA RTX systems, and CPU configurations such as AMD and Intel
 by measuring runtime, throughput, memory use, and the workloads each system can fit.

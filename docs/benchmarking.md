@@ -35,7 +35,9 @@ Stateful loss includes an initial chunk without context; evaluation skips that f
 Stateful quality uses the same generated stream and is a diagnostic, not held-out generalization.
 Coffee/news quality uses the held-out row split from the last trial. Infer mode uses randomly
 initialized weights; it characterizes architecture execution, not a trained deployment model.
-The initial version does not save/load checkpoints or measure time to a quality threshold.
+Legacy micro examples do not save/load checkpoints. The new classification lifecycle
+saves trained weights and restores them for held-out inference; see [classification](classification.md).
+Time to a quality threshold is not measured.
 
 GPU warmup may fail due to unsupported operators or OOM; this writes a failed report
 and is not a valid performance result. CPU fallback on MPS is rejected when enabled. Inspect

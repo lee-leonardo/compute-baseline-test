@@ -23,7 +23,12 @@ def split_indices(n, seed):
     return order[:cut], order[cut:]
 
 
-def coffee(args):
+def coffee(args, preprocessing=None):
+    """Build a tabular MLP, fitting preprocessing on train only unless supplied.
+
+    Checkpoint inference supplies stored statistics to avoid refitting on input.
+    The seeded split and categorical label ordering are shared across runtimes.
+    """
     if not args.data or not args.target or not args.features:
         raise ValueError(
             "coffee requires --data, --target and --features (explicit, leakage-safe columns)"
@@ -59,9 +64,17 @@ def coffee(args):
     x = np.array([[number(r[c]) for c in features] for r in rows], dtype=np.float32)
     if np.isnan(x[train]).all(axis=0).any():
         raise ValueError("A feature has no finite training values")
-    median = np.nanmedian(x[train], axis=0)
+    median = (
+        np.nanmedian(x[train], axis=0)
+        if preprocessing is None
+        else np.asarray(preprocessing["median"], dtype=np.float32)
+    )
     x = np.where(np.isnan(x), median, x)
-    mean, std = x[train].mean(0), x[train].std(0)
+    if preprocessing is None:
+        mean, std = x[train].mean(0), x[train].std(0)
+    else:
+        mean = np.asarray(preprocessing["mean"], dtype=np.float32)
+        std = np.asarray(preprocessing["std"], dtype=np.float32)
     x = (x - mean) / np.maximum(std, 1e-6)
     y = np.array([labels.index(r[args.target]) for r in rows], dtype=np.int64)
     model = nn.Sequential(
@@ -78,6 +91,11 @@ def coffee(args):
         {
             "data_sha256": digest(args.data),
             "features": features,
+            "preprocessing": {
+                "median": median.tolist(),
+                "mean": mean.tolist(),
+                "std": std.tolist(),
+            },
             "labels": labels,
             "train_rows": len(train),
             "test_rows": len(test),

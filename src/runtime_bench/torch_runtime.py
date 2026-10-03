@@ -64,6 +64,18 @@ class TorchRuntime:
                 self.scaler.update()
         return loss.detach()
 
+    def predict(self, x):
+        """Return logits without loss or optimizer work for checkpoint inference timing."""
+        with (
+            torch.inference_mode(),
+            torch.autocast(
+                device_type=self.device.type,
+                dtype=self.dtype,
+                enabled=self.args.precision != "fp32",
+            ),
+        ):
+            return self.model(x)
+
     def synchronize(self):
         synchronize(self.device)
 

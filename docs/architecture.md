@@ -4,7 +4,10 @@ The purpose is empirical hardware comparison across Apple Silicon, NVIDIA RTX, a
 CPU configurations such as AMD/Intel, with room for other verified adapters. See
 [hardware coverage](hardware.md); AMD GPU/ROCm support has not been implemented.
 
-`cli.py` owns configuration, seeds, repeated trials, correctness checks, and reports.
+`cli.py` owns command help, configuration validation, dispatch and report output.
+`micro.py` owns repeated learning trials and evaluation; `classification.py` owns
+the MLP checkpoint and preprocessing contract. See the [CLI guide](cli.md) and
+[classification lifecycle](classification.md).
 `torch_runtime.py` and `mlx_runtime.py` own device execution, optimization, synchronization,
 and runtime memory metrics. `hardware.py` describes the relevant host/device hardware. `workloads.py` builds deterministic learning data and PyTorch modules.
 `model_specs.select_model` chooses task defaults and rejects the embedding-only MiniLM

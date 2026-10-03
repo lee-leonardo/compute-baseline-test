@@ -72,8 +72,8 @@ responsive the other services were.
 
 For capacity sweeps, inspect each batch/length configuration independently. Failure is
 an outcome; use `--capacity` instead of calculating speedup between unequal jobs.
-More samples/sec does not prove faster convergence. Time-to-quality, persisted model
-checkpoints, service latency probes, and automatic job scheduling are not implemented.
+More samples/sec does not prove faster convergence. Time-to-quality, service latency probes, and automatic job scheduling are not implemented.
+Persisted model checkpoints are available for the classification MLP lifecycle only.
 
 ## Export contract
 

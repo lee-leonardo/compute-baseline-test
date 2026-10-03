@@ -3,10 +3,14 @@
 The current tranche establishes manifests, run labels, diagnostic NLP phases, failure
 retention, and per-trial export. Review that workflow before expanding workloads.
 
+The first workload tranche now includes [classification training and saved-checkpoint
+inference](classification.md) on PyTorch CPU/CUDA/MPS. Review it before extending adapters
+or objectives.
+
 1. **Embedding training:** reproducible paired-text data, contrastive objective,
    held-out evaluation, and saved checkpoints reused by embedding inference.
-2. **Classification lifecycle:** matched MLP training and saved-checkpoint inference,
-   with sklearn retained as a separately labeled CPU reference.
+2. **Classification extensions:** evaluate additional data/quality metrics and MLX
+   checkpoint support; retain sklearn as a separate CPU reference.
 3. **Sequence experiments:** refine the existing Transformer task and evaluate whether
    an RNN or autoencoder baseline adds a useful, matched learning question.
 

@@ -90,6 +90,7 @@ def fetch_news(output):
 
 
 def main():
+    """Acquire assets separately from measured runs; exit 2 on acquisition errors."""
     p = argparse.ArgumentParser(
         description="Fetch a pinned model before running the workload ladder"
     )
