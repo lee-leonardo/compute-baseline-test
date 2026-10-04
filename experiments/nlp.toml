@@ -1,0 +1,34 @@
+version = 1
+
+[defaults]
+runtime = "torch"
+device = "cpu"
+data = "data/ag-news.csv"
+steps = 10
+warmup = 1
+repeats = 3
+seed = 42
+precision = "fp32"
+limit = 128
+
+[[cases]]
+name = "embedding-inference"
+task = "embeddings"
+model = "minilm"
+[cases.sweep]
+batch = [4, 8]
+length = [32, 128]
+
+[[cases]]
+name = "fill-mask"
+task = "infer"
+model = "distilbert"
+batch = 4
+length = 32
+
+[[cases]]
+name = "classification-finetuning"
+task = "finetune"
+model = "distilbert"
+batch = 4
+length = 32

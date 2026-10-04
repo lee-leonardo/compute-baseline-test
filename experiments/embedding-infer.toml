@@ -1,0 +1,18 @@
+# Reuse the same trained directory and paired CSV across nodes.
+version = 1
+[defaults]
+task = "embedding"
+mode = "infer"
+data = "data/news-pairs.csv"
+checkpoint = "results/embedding-model"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+length = 64
+steps = 50
+warmup = 1
+repeats = 3
+[[cases]]
+name = "trained-embedding-inference"
+[cases.sweep]
+batch = [8, 32]

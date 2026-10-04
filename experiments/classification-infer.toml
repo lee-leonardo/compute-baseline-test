@@ -1,0 +1,19 @@
+# First create results/classifier.pt using classification train, or change this path.
+# Keep the same artifact across nodes for matched inference.
+version = 1
+
+[defaults]
+task = "classification"
+mode = "infer"
+checkpoint = "results/classifier.pt"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+steps = 100
+warmup = 5
+repeats = 3
+
+[[cases]]
+name = "saved-classification-inference"
+[cases.sweep]
+batch = [8, 32, 128]

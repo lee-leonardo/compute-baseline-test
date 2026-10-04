@@ -1,0 +1,19 @@
+# No data/model downloads. Each case writes its own checkpoint in its report folder.
+version = 1
+
+[defaults]
+task = "classification"
+mode = "train"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+steps = 100
+warmup = 5
+repeats = 3
+width = 128
+seed = 42
+
+[[cases]]
+name = "synthetic-classification-training"
+[cases.sweep]
+batch = [8, 32, 128]

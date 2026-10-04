@@ -1,0 +1,17 @@
+version = 1
+
+[defaults]
+steps = 10
+warmup = 2
+repeats = 3
+seed = 42
+width = 32
+precision = "fp32"
+
+[[cases]]
+name = "cpu-smoke"
+task = "smoke"
+runtime = "torch"
+device = "cpu"
+[cases.sweep]
+batch = [8, 32]
