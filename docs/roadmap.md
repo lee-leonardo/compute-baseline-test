@@ -13,10 +13,10 @@ Classification preparation now explicitly validates or regenerates artifacts bef
 The first [embedding tranche](embedding.md) implements paired-text contrastive training,
 held-out retrieval evaluation, and saved encoder/tokenizer inference on PyTorch.
 
-Next tranche:
-
-1. **Sequence experiments:** refine the existing Transformer task and evaluate whether
-   an RNN or autoencoder baseline adds a useful, matched learning question.
+The [Transformer lifecycle](transformer.md) now supports from-scratch sequence classification,
+synthetic endpoint-order data or AG News CSV, held-out quality and portable checkpoints.
+It reuses the shared harness and PyTorch adapter. RNN/autoencoder comparisons remain optional
+future baselines; they are not part of this implemented Transformer tranche.
 
 Each tranche needs offline correctness fixtures, reset/provenance checks, an explicit
 runtime compatibility table, and separate native-device validation. Synthetic fixtures

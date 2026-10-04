@@ -30,7 +30,16 @@ def parser():
     )
     p.add_argument(
         "task",
-        choices=["embedding", "classification", "coffee", "news", "stateful", "smoke", *TASKS],
+        choices=[
+            "transformer",
+            "embedding",
+            "classification",
+            "coffee",
+            "news",
+            "stateful",
+            "smoke",
+            *TASKS,
+        ],
     )
     p.add_argument(
         "--runtime",
@@ -143,12 +152,16 @@ def run(args):
         from .classification import validate
 
         validate(args)
+    elif args.task == "transformer":
+        from .transformer import validate
+
+        validate(args)
     elif args.task == "embedding":
         from .embedding import validate
 
         validate(args)
     elif args.checkpoint is not None:
-        raise ValueError("--checkpoint is supported by classification and embedding")
+        raise ValueError("--checkpoint is supported by classification, embedding and transformer")
     operation_start = time.perf_counter()
     torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
@@ -422,6 +435,62 @@ def embedding_parser():
     return p
 
 
+def transformer_parser():
+    """Focused from-scratch sequence training and checkpoint-inference options."""
+    flat = parser()
+    defaults = vars(flat.parse_args(["transformer"]))
+    p = argparse.ArgumentParser(
+        prog="runtime-bench transformer",
+        description="From-scratch Transformer sequence classification",
+    )
+    modes = p.add_subparsers(dest="mode", required=True)
+    common = {
+        "checkpoint",
+        "data",
+        "device",
+        "precision",
+        "batch",
+        "steps",
+        "warmup",
+        "repeats",
+        "threads",
+        "output",
+        "node",
+        "condition",
+    }
+    for mode in ("train", "infer"):
+        sub = modes.add_parser(mode, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        sub.set_defaults(**(defaults | {"mode": mode}))
+        selected = common | (
+            {"width", "length", "limit", "seed", "synthetic_data"} if mode == "train" else set()
+        )
+        for action in flat._actions:
+            if action.dest not in selected:
+                continue
+            kwargs = {"default": action.default, "help": action.help}
+            if isinstance(action, argparse._StoreTrueAction):
+                kwargs["action"] = "store_true"
+            else:
+                kwargs.update(type=action.type, choices=action.choices)
+            if action.dest == "checkpoint":
+                kwargs.update(
+                    required=mode == "infer",
+                    help="New output file for train; required trained file for infer",
+                )
+            if action.dest == "data":
+                kwargs["help"] = "AG News CSV; omit for synthetic endpoint-order sequences"
+            if action.dest == "limit":
+                kwargs["help"] = "Maximum selected CSV rows or generated synthetic sequences"
+            if action.dest == "device":
+                kwargs["choices"] = ["auto", "cpu", "cuda", "mps"]
+            if action.dest in ("warmup", "repeats", "length", "width"):
+                kwargs["default"] = {"warmup": 2, "repeats": 3, "length": 32, "width": 64}[
+                    action.dest
+                ]
+            sub.add_argument(*action.option_strings, **kwargs)
+    return p
+
+
 def command_parser():
     """Build the short command index; individual commands own their detailed help."""
     p = argparse.ArgumentParser(
@@ -431,6 +500,7 @@ def command_parser():
     )
     commands = p.add_subparsers(dest="command")
     for name, help_text in {
+        "transformer": "Train a sequence classifier or infer from its checkpoint",
         "embedding": "Train a paired-text encoder or infer from its checkpoint",
         "classification": "Train a classifier or infer from a saved checkpoint",
         "run": "Run an existing workload with advanced options",
@@ -474,6 +544,10 @@ def main():
             p, arguments = parser(), argv
         else:
             p, arguments = classification_parser(), argv[1:]
+    elif argv[0] == "transformer" and (
+        len(argv) == 1 or argv[1] in ("train", "infer", "-h", "--help")
+    ):
+        p, arguments = transformer_parser(), argv[1:]
     elif argv[0] == "embedding" and (
         len(argv) == 1 or argv[1] in ("train", "infer", "pairs", "-h", "--help")
     ):

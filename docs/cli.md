@@ -5,6 +5,7 @@
 | Command | Purpose |
 | --- | --- |
 | `classification prepare` | Validate an existing artifact or train a missing one before inference |
+| `transformer train/infer` | From-scratch sequence classification and held-out checkpoint inference |
 | `embedding pairs` | Prepare paired texts from a local AG News CSV |
 | `embedding train/infer` | Contrastive encoder training and held-out checkpoint inference |
 | `classification train` | Train a tabular MLP, evaluate it, and save a checkpoint |
@@ -94,3 +95,6 @@ adding model-specific behavior to argument dispatch.
 The singular [embedding lifecycle](embedding.md) has its own focused help and paired-data
 contract. Legacy plural `embeddings` remains encoding-only. `classification prepare`
 requires an explicit checkpoint path and never replaces an existing artifact.
+
+See the [Transformer guide](transformer.md) for its synthetic/CSV task, checkpoint-restored
+length, padding behavior, and timing. Use `transformer train --help` or `transformer infer --help`.

@@ -73,7 +73,7 @@ responsive the other services were.
 For capacity sweeps, inspect each batch/length configuration independently. Failure is
 an outcome; use `--capacity` instead of calculating speedup between unequal jobs.
 More samples/sec does not prove faster convergence. Time-to-quality, service latency probes, and automatic job scheduling are not implemented.
-Persisted checkpoints are available for classification MLPs and the paired-text embedding lifecycle.
+Persisted checkpoints are available for classification MLPs, paired-text embeddings and from-scratch Transformer sequence classifiers.
 
 ## Export contract
 

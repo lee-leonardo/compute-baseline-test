@@ -68,3 +68,8 @@ are tracked in the [workload roadmap](roadmap.md).
 and checkpoint directories; `embedding_runtime.py` owns normalized pooling and contrastive
 updates on the selected device. This uses the separate `embedding-v1` protocol. The
 legacy plural `embeddings` workload remains unchanged. See [ADR 0009](adr/0009-embedding-lifecycle.md).
+
+`transformer.py` owns the from-scratch sequence model, data contract and checkpoint format.
+It reuses `micro.py` trials, `TorchRuntime`, and classification quality aggregation, with
+`transformer-v1` report semantics. The legacy news/stateful models remain unchanged.
+See [ADR 0010](adr/0010-transformer-lifecycle.md).

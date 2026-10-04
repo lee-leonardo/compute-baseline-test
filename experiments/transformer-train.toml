@@ -1,0 +1,19 @@
+# Offline sequence task. Each case saves a unique checkpoint in its result folder.
+version = 1
+[defaults]
+task = "transformer"
+mode = "train"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+width = 64
+limit = 1000
+steps = 100
+warmup = 2
+repeats = 3
+seed = 42
+[[cases]]
+name = "synthetic-transformer-training"
+[cases.sweep]
+batch = [8, 32]
+length = [16, 64]

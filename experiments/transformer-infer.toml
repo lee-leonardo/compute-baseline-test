@@ -1,0 +1,16 @@
+# First train results/transformer.pt using the CLI, or change the checkpoint path.
+version = 1
+[defaults]
+task = "transformer"
+mode = "infer"
+checkpoint = "results/transformer.pt"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+steps = 100
+warmup = 2
+repeats = 3
+[[cases]]
+name = "saved-transformer-inference"
+[cases.sweep]
+batch = [8, 32]

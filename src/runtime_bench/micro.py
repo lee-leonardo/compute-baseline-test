@@ -31,15 +31,18 @@ def run_micro(args):
         adapter = TorchRuntime
     torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
-    if args.task == "classification":
-        from .classification import prepare
+    if args.task in ("classification", "transformer"):
+        if args.task == "transformer":
+            from .transformer import prepare
+        else:
+            from .classification import prepare
 
         model, train, test, metadata = prepare(args)
     else:
         model, train, test, metadata = build(args)
     runtime = adapter(args, model)
     stateful = args.task == "stateful"
-    prediction_only = args.task == "classification" and args.mode == "infer"
+    prediction_only = args.task in ("classification", "transformer") and args.mode == "infer"
 
     def batch(data, step):
         x, y = data
@@ -109,7 +112,7 @@ def run_micro(args):
     correct, count, loss_sum = 0, 0, 0.0
     confusion = (
         np.zeros((len(metadata["labels"]), len(metadata["labels"])), dtype=np.int64)
-        if args.task == "classification"
+        if args.task in ("classification", "transformer")
         else None
     )
     iterations = len(test[0]) if stateful else (len(test[0]) + args.batch - 1) // args.batch
@@ -154,8 +157,12 @@ def run_micro(args):
         "trials": trials,
     }
 
-    if args.task == "classification":
-        result["protocol"] = "classification-v1"
+    if args.task == "transformer":
+        for trial in trials:
+            trial["padded_tokens_per_second"] = trial["loop_samples_per_second"] * args.length
+        result["job_samples_per_second"] = args.batch * args.steps * args.repeats / wall_seconds
+    if args.task in ("classification", "transformer"):
+        result["protocol"] = f"{args.task}-v1"
         result["dataset"]["timed_split"] = "train" if args.mode == "train" else "test"
         from .classification_metrics import summarize
 
@@ -166,7 +173,10 @@ def run_micro(args):
             result["quality"]["accuracy"] - result["quality"]["majority_baseline_accuracy"]
         )
         if args.mode == "train":
-            from .classification import save_checkpoint
+            if args.task == "transformer":
+                from .transformer import save_checkpoint
+            else:
+                from .classification import save_checkpoint
 
             result["checkpoint"] = save_checkpoint(args, runtime.export_model(), metadata)
     return result

@@ -70,7 +70,7 @@ modes are separate experiments.
 | --- | --- | --- |
 | Classification | MLP training + saved-checkpoint inference; separate sklearn baseline | PyTorch CPU/CUDA/MPS and MLX CPU/GPU; portable checkpoints and per-class quality |
 | NLP / embeddings | Paired-text contrastive training + checkpoint inference; legacy encoding, fill-mask and classifier fine-tuning | PyTorch CPU/CUDA/MPS; held-out retrieval evaluation |
-| Sequence learning | Small news Transformer; synthetic stateful memory Transformer | Learning examples, not pretrained language-model serving |
+| Sequence learning | From-scratch Transformer training + checkpoint inference on synthetic sequences or news CSV | PyTorch CPU/CUDA/MPS; legacy news/stateful examples retained |
 
 Use `embedding train/infer` for contrastive learning and saved encoder reuse.
 The legacy `embeddings` task only computes vectors; `finetune` trains a news classifier. BERT is an optional larger encoder, not a required
@@ -78,6 +78,7 @@ Python package. MLX supports `classification`, `smoke`, and `coffee` MLPs in FP3
 
 ## Guides
 
+- [Transformer sequence training and inference](docs/transformer.md)
 - [Embedding training and inference](docs/embedding.md)
 - [Classification and checkpoint preparation](docs/classification.md)
 - [Experiment manifests and profiling workflow](docs/experiments.md)
