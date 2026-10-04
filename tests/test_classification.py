@@ -244,3 +244,39 @@ def test_corrupt_preprocessing_is_rejected(tmp_path):
     torch.save(payload, checkpoint)
     with pytest.raises(ValueError, match="non-finite"):
         run(options("infer", checkpoint, "--data", str(path)))
+
+
+def test_prepare_regenerates_missing_checkpoint_and_reuses_existing(tmp_path, monkeypatch, capsys):
+    checkpoint = tmp_path / "model.pt"
+    command = [
+        "runtime-bench",
+        "classification",
+        "prepare",
+        "--checkpoint",
+        str(checkpoint),
+        "--output",
+        str(tmp_path),
+        "--device",
+        "cpu",
+        "--steps",
+        "2",
+        "--warmup",
+        "0",
+        "--repeats",
+        "1",
+        "--threads",
+        "1",
+    ]
+    monkeypatch.setattr("sys.argv", command)
+    main()
+    original = checkpoint.read_bytes()
+    reports = list(tmp_path.glob("*.json"))
+    main()
+    assert checkpoint.read_bytes() == original
+    assert list(tmp_path.glob("*.json")) == reports
+    assert "Reusing validated checkpoint" in capsys.readouterr().out
+    checkpoint.unlink()
+    with pytest.raises(ValueError, match="classification prepare"):
+        run(options("infer", checkpoint))
+    main()
+    assert checkpoint.exists()

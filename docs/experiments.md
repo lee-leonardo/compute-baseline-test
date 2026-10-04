@@ -40,7 +40,7 @@ process failures that could not write a report. A partial index is not a complet
 
 ## Standard versus diagnostic measurement
 
-Standard mode retains the existing protocols: synchronized batch pipeline timing for
+Standard mode retains the existing protocols (the new embedding lifecycle uses `embedding-v1`): synchronized batch pipeline timing for
 pretrained NLP, and transfer/compute timing for micro workloads. Setup and full-job wall
 time are retained separately. Micro and operational measurements are not interchangeable.
 
@@ -73,7 +73,7 @@ responsive the other services were.
 For capacity sweeps, inspect each batch/length configuration independently. Failure is
 an outcome; use `--capacity` instead of calculating speedup between unequal jobs.
 More samples/sec does not prove faster convergence. Time-to-quality, service latency probes, and automatic job scheduling are not implemented.
-Persisted model checkpoints are available for the classification MLP lifecycle only.
+Persisted checkpoints are available for classification MLPs and the paired-text embedding lifecycle.
 
 ## Export contract
 

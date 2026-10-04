@@ -4,6 +4,9 @@
 
 | Command | Purpose |
 | --- | --- |
+| `classification prepare` | Validate an existing artifact or train a missing one before inference |
+| `embedding pairs` | Prepare paired texts from a local AG News CSV |
+| `embedding train/infer` | Contrastive encoder training and held-out checkpoint inference |
 | `classification train` | Train a tabular MLP, evaluate it, and save a checkpoint |
 | `classification infer` | Benchmark saved weights on the same held-out split |
 | `run TASK` | Advanced access to individual workloads and legacy examples |
@@ -87,3 +90,7 @@ output. `micro.py` owns learning trials and evaluation. `classification.py` owns
 checkpoint/data contract; `torch_runtime.py` owns device operations. `experiments.py`
 supervises processes. Follow those boundaries when investigating a bug rather than
 adding model-specific behavior to argument dispatch.
+
+The singular [embedding lifecycle](embedding.md) has its own focused help and paired-data
+contract. Legacy plural `embeddings` remains encoding-only. `classification prepare`
+requires an explicit checkpoint path and never replaces an existing artifact.

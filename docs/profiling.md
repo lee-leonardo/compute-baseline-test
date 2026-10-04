@@ -54,3 +54,7 @@ synchronized model execution within each timed NLP trial. Standard mode preserve
 original timing behavior. Compare only matching profiling modes. See
 [experiment workflow](experiments.md#standard-versus-diagnostic-measurement) for scopes,
 limitations, run labels, and per-trial export.
+
+The singular embedding lifecycle also supports diagnostic tokenization/transfer/execution
+phases. Its `embedding-v1` report counts pairs during training and anchors during inference;
+compare only matching modes and work budgets. Retrieval evaluation is outside timed batches.

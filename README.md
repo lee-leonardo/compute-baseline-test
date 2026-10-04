@@ -69,15 +69,17 @@ modes are separate experiments.
 | Family | Implemented | Boundary |
 | --- | --- | --- |
 | Classification | MLP training + saved-checkpoint inference; separate sklearn baseline | PyTorch CPU/CUDA/MPS and MLX CPU/GPU; portable checkpoints and per-class quality |
-| NLP / embeddings | Pretrained embedding inference; fill-mask inference; classification fine-tuning | Embedding training is not implemented |
+| NLP / embeddings | Paired-text contrastive training + checkpoint inference; legacy encoding, fill-mask and classifier fine-tuning | PyTorch CPU/CUDA/MPS; held-out retrieval evaluation |
 | Sequence learning | Small news Transformer; synthetic stateful memory Transformer | Learning examples, not pretrained language-model serving |
 
-The `embeddings` task computes vectors. `finetune` trains a news classifier; it is
-not contrastive embedding training. BERT is an optional larger encoder, not a required
+Use `embedding train/infer` for contrastive learning and saved encoder reuse.
+The legacy `embeddings` task only computes vectors; `finetune` trains a news classifier. BERT is an optional larger encoder, not a required
 Python package. MLX supports `classification`, `smoke`, and `coffee` MLPs in FP32.
 
 ## Guides
 
+- [Embedding training and inference](docs/embedding.md)
+- [Classification and checkpoint preparation](docs/classification.md)
 - [Experiment manifests and profiling workflow](docs/experiments.md)
 - [Installation, downloads, and individual commands](docs/installation.md)
 - [Model × task and runtime × device compatibility](docs/models-and-runtimes.md)

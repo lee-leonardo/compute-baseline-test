@@ -63,3 +63,8 @@ reports and exports per-trial tables. Node and condition labels describe executi
 context independently of workload identity. See [experiment workflow](experiments.md)
 and [ADR 0006](adr/0006-experiment-profiling.md). New objectives and checkpoint support
 are tracked in the [workload roadmap](roadmap.md).
+
+`embedding.py` owns paired-text data validation, encoder trial resets, retrieval evaluation,
+and checkpoint directories; `embedding_runtime.py` owns normalized pooling and contrastive
+updates on the selected device. This uses the separate `embedding-v1` protocol. The
+legacy plural `embeddings` workload remains unchanged. See [ADR 0009](adr/0009-embedding-lifecycle.md).

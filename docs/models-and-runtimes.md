@@ -87,3 +87,7 @@ needed optional packages.
 
 See the [README walkthrough](installation.md#install-and-run-step-by-step),
 [workload ladder](ladder.md), and [adapter boundaries](architecture.md).
+
+The singular `embedding train/infer` lifecycle adds contrastive training and saved encoder
+reuse for these encoders on PyTorch CPU/CUDA/MPS, with paired CSV inputs rather than the
+legacy news-label format. See [embedding workflow](embedding.md). MLX is not supported.

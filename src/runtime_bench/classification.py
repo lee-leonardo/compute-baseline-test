@@ -6,6 +6,7 @@ stored preprocessing, split seed, architecture, and trained weights.
 """
 
 import pickle
+import shlex
 from datetime import datetime, timezone
 
 import numpy as np
@@ -35,6 +36,13 @@ def validate(args):
 
 def load_checkpoint(path):
     """Load only tensors/primitives on CPU and validate the artifact envelope."""
+    if not path.is_file():
+        raise ValueError(
+            f"Classification checkpoint not found: {path}. Prepare it before inference: "
+            f"runtime-bench classification prepare --checkpoint {shlex.quote(str(path))}. "
+            "For CSV training also supply --data, --target and --features. "
+            "Use the original training settings to reproduce a deleted baseline."
+        )
     try:
         payload = torch.load(path, map_location="cpu", weights_only=True)
         if not isinstance(payload, dict) or payload.get("format") != "classification-v1":

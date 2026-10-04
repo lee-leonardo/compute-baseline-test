@@ -36,7 +36,7 @@ def compare(baseline, candidate):
             raise ValueError("Expected a schema 1 report with completed trials")
     if baseline.get("protocol", "micro-v1") != candidate.get("protocol", "micro-v1"):
         raise ValueError("Incompatible measurement protocols")
-    operational = baseline.get("protocol") == "operational-v1"
+    operational = baseline.get("protocol") in ("operational-v1", "embedding-v1")
     keys = [
         key for key in MATCH_KEYS if not operational or key not in ("threads", "width", "model")
     ]
@@ -58,7 +58,7 @@ def compare(baseline, candidate):
     def median(report, key):
         return statistics.median(t[key] for t in report["trials"])
 
-    operational = baseline.get("protocol") == "operational-v1"
+    operational = baseline.get("protocol") in ("operational-v1", "embedding-v1")
     latency = "batch_median_ms" if operational else "compute_median_ms"
     throughput = "samples_per_second" if operational else "loop_samples_per_second"
     result = {
@@ -77,7 +77,15 @@ def compare(baseline, candidate):
         result[f"{label}_throughput_cv"] = (
             statistics.stdev(rates) / statistics.mean(rates) if len(rates) > 1 else None
         )
-    for key in ("accuracy", "cross_entropy", "balanced_accuracy", "macro_f1", "weighted_f1"):
+    for key in (
+        "accuracy",
+        "cross_entropy",
+        "balanced_accuracy",
+        "macro_f1",
+        "weighted_f1",
+        "retrieval_recall_at_1",
+        "retrieval_mrr",
+    ):
         a, b = baseline["quality"].get(key), candidate["quality"].get(key)
         result[f"{key}_change"] = b - a if a is not None and b is not None else None
     return result
@@ -89,7 +97,7 @@ def capacity_line(report):
     gpu_peak = max((t.get("cuda_peak_allocated_bytes") or 0 for t in trials), default=0) or None
     rate_key = (
         "samples_per_second"
-        if report.get("protocol") == "operational-v1"
+        if report.get("protocol") in ("operational-v1", "embedding-v1")
         else "loop_samples_per_second"
     )
     throughput = statistics.median(t[rate_key] for t in trials) if trials else None

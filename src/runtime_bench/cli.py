@@ -29,7 +29,8 @@ def parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument(
-        "task", choices=["classification", "coffee", "news", "stateful", "smoke", *TASKS]
+        "task",
+        choices=["embedding", "classification", "coffee", "news", "stateful", "smoke", *TASKS],
     )
     p.add_argument(
         "--runtime",
@@ -78,7 +79,9 @@ def parser():
         "infer/finetune=distilbert. MiniLM does not support fill-mask inference.",
     )
     p.add_argument(
-        "--checkpoint", type=Path, help="Classification: output for train, input for infer"
+        "--checkpoint",
+        type=Path,
+        help="Classification file or embedding directory: output for train, input for infer",
     )
     p.add_argument("--model-cache", type=Path, default=Path("data/models"))
     descriptions = {
@@ -107,7 +110,12 @@ def parser():
 
 def run(args):
     """Resolve defaults, validate a request, sample resources, and dispatch one job."""
-    if args.profile == "diagnostic" and args.task not in ("embeddings", "infer", "finetune"):
+    if args.profile == "diagnostic" and args.task not in (
+        "embedding",
+        "embeddings",
+        "infer",
+        "finetune",
+    ):
         raise ValueError("Diagnostic phase profiling supports embeddings, infer and finetune")
     args.mode = args.mode or ("infer" if args.task in ("infer", "embeddings") else "train")
     args.repeats = args.repeats if args.repeats is not None else (1 if args.task in TASKS else 3)
@@ -135,15 +143,23 @@ def run(args):
         from .classification import validate
 
         validate(args)
+    elif args.task == "embedding":
+        from .embedding import validate
+
+        validate(args)
     elif args.checkpoint is not None:
-        raise ValueError("--checkpoint is supported only by classification")
+        raise ValueError("--checkpoint is supported by classification and embedding")
     operation_start = time.perf_counter()
     torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
     sampler = Profiler(args)
     try:
         with sampler:
-            if args.task in TASKS:
+            if args.task == "embedding":
+                from .embedding import run as run_embedding
+
+                result = run_embedding(args)
+            elif args.task in TASKS:
                 from .operational import run as run_operational
 
                 result = run_operational(args)
@@ -275,13 +291,17 @@ def classification_parser():
         "data",
         "checkpoint",
     }
-    for mode in ("train", "infer"):
+    for mode in ("train", "infer", "prepare"):
         sub = modes.add_parser(
             mode,
-            help="Fit and save an MLP" if mode == "train" else "Load and benchmark an MLP",
+            help={
+                "train": "Fit and save an MLP",
+                "infer": "Load and benchmark an MLP",
+                "prepare": "Validate an existing checkpoint or train a missing one",
+            }[mode],
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
-        sub.set_defaults(**(defaults | {"mode": mode}))
+        sub.set_defaults(**(defaults | {"mode": "train" if mode == "prepare" else mode}))
         groups = {
             "data": sub.add_argument_group("data and checkpoint"),
             "execution": sub.add_argument_group("execution"),
@@ -289,7 +309,7 @@ def classification_parser():
             "reports": sub.add_argument_group("reports and labels"),
         }
         selected = shared | (
-            {"target", "features", "width", "seed", "synthetic_data"} if mode == "train" else set()
+            {"target", "features", "width", "seed", "synthetic_data"} if mode != "infer" else set()
         )
         for action in flat._actions:
             if action.dest not in selected:
@@ -314,10 +334,10 @@ def classification_parser():
             if action.dest == "device":
                 kwargs["choices"] = ["auto", "cpu", "cuda", "mps", "gpu"]
             if action.dest == "checkpoint":
-                kwargs["required"] = mode == "infer"
+                kwargs["required"] = mode in ("infer", "prepare")
                 kwargs["help"] = (
                     "New checkpoint path (default: timestamped file in output)"
-                    if mode == "train"
+                    if mode != "infer"
                     else "Checkpoint written by classification train"
                 )
             group = (
@@ -333,6 +353,75 @@ def classification_parser():
     return p
 
 
+def embedding_parser():
+    """Expose paired-text training and checkpoint inference without classification knobs."""
+    flat = parser()
+    defaults = vars(flat.parse_args(["embedding"]))
+    p = argparse.ArgumentParser(
+        prog="runtime-bench embedding", description="Contrastive paired-text encoder benchmarks"
+    )
+    modes = p.add_subparsers(dest="mode", required=True)
+    common = {
+        "data",
+        "checkpoint",
+        "device",
+        "precision",
+        "batch",
+        "length",
+        "steps",
+        "warmup",
+        "repeats",
+        "threads",
+        "output",
+        "node",
+        "condition",
+        "profile",
+    }
+    for mode in ("train", "infer"):
+        sub = modes.add_parser(mode, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        sub.set_defaults(**(defaults | {"mode": mode}))
+        selected = common | (
+            {"model", "model_cache", "seed", "limit", "synthetic_data"}
+            if mode == "train"
+            else set()
+        )
+        for action in flat._actions:
+            if action.dest not in selected:
+                continue
+            kwargs = {"default": action.default, "help": action.help}
+            if isinstance(action, argparse._StoreTrueAction):
+                kwargs["action"] = "store_true"
+            else:
+                kwargs.update(type=action.type, choices=action.choices)
+            if action.dest in ("data", "checkpoint"):
+                kwargs["required"] = True
+            if action.dest == "data":
+                kwargs["help"] = (
+                    "Paired CSV with anchor,positive header; same file for checkpoint inference"
+                )
+            if action.dest == "model":
+                kwargs.update(
+                    default="minilm",
+                    help="Cached base encoder alias or local Transformers directory",
+                )
+            if action.dest == "checkpoint":
+                kwargs["help"] = (
+                    "New output directory" if mode == "train" else "Trained embedding directory"
+                )
+            if action.dest == "device":
+                kwargs["choices"] = ["auto", "cpu", "cuda", "mps"]
+            if action.dest == "warmup":
+                kwargs.update(default=1, help="Discarded warmup batches")
+            sub.add_argument(*action.option_strings, **kwargs)
+    pair_parser = modes.add_parser(
+        "pairs", help="Prepare title/description pairs from an AG News CSV"
+    )
+    pair_parser.add_argument("--data", type=Path, required=True, help="Source AG News CSV")
+    pair_parser.add_argument("--output", type=Path, required=True, help="New paired CSV output")
+    pair_parser.add_argument("--limit", type=int, default=2000, help="Maximum accepted pairs")
+    return p
+
+
 def command_parser():
     """Build the short command index; individual commands own their detailed help."""
     p = argparse.ArgumentParser(
@@ -342,6 +431,7 @@ def command_parser():
     )
     commands = p.add_subparsers(dest="command")
     for name, help_text in {
+        "embedding": "Train a paired-text encoder or infer from its checkpoint",
         "classification": "Train a classifier or infer from a saved checkpoint",
         "run": "Run an existing workload with advanced options",
         "suite": "Run a TOML experiment manifest",
@@ -380,14 +470,33 @@ def main():
             sys.argv = original
     if argv[0] == "classification":
         # Flat form remains available for manifests: classification --mode train ...
-        if len(argv) > 1 and argv[1] not in ("train", "infer", "-h", "--help"):
+        if len(argv) > 1 and argv[1] not in ("train", "infer", "prepare", "-h", "--help"):
             p, arguments = parser(), argv
         else:
             p, arguments = classification_parser(), argv[1:]
+    elif argv[0] == "embedding" and (
+        len(argv) == 1 or argv[1] in ("train", "infer", "pairs", "-h", "--help")
+    ):
+        p, arguments = embedding_parser(), argv[1:]
     else:
         p, arguments = parser(), argv[1:] if argv[0] == "run" else argv
     args = p.parse_args(arguments)
+    if argv[:2] == ["embedding", "pairs"]:
+        from .embedding import create_news_pairs
+
+        try:
+            print(create_news_pairs(args.data, args.output, args.limit))
+        except (ValueError, OSError) as exc:
+            p.exit(2, f"pair preparation failed: {exc}\n")
+        return
     try:
+        if argv[:2] == ["classification", "prepare"] and args.checkpoint.exists():
+            from .classification import prepare
+
+            args.mode = "infer"
+            prepare(args)  # Verify dataset and weights, without executing a benchmark.
+            print(f"Reusing validated checkpoint: {args.checkpoint}")
+            return
         result = run(args)
         print(save(result, args.output))
         if result.get("checkpoint"):

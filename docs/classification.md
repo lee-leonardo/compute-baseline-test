@@ -134,3 +134,24 @@ Edit runtime/device for the target node while retaining workload settings. Chang
 inference manifest's checkpoint path to compare another artifact. The suite runner does
 not infer training/inference dependencies; input checkpoints are explicit. The sklearn
 `classify` full-fit baseline remains a separate workload requiring `pipeline`.
+
+## Missing checkpoints and explicit preparation
+
+Inference deliberately fails if its checkpoint was deleted. Prepare or regenerate it
+before running an inference command or suite:
+
+```sh
+uv run --locked --extra cpu runtime-bench classification prepare \
+  --device cpu --checkpoint results/classifier.pt --steps 100 --repeats 3
+```
+
+`prepare` accepts the training options, requires an explicit checkpoint path, validates
+and reuses an existing artifact, and trains only if that path is absent. For a CSV artifact,
+supply the original CSV; when creating it also supply target/features. Existing artifacts
+are checked with their stored configuration, so changing training flags does not replace
+an existing baseline. Corrupt artifacts fail instead of being silently overwritten.
+
+If the file was deleted, use the original training settings/data/runtime to reproduce it;
+`prepare` cannot recover those settings from a missing artifact. Regeneration can produce
+different weights across runtimes or software versions. Share one artifact across nodes.
+Preparation runs separately from measured inference and reports whether it trained or reused.
