@@ -95,8 +95,8 @@ def test_inference_requires_trained_artifact_and_matching_weights(tmp_path):
     torch.save(payload, checkpoint)
     with pytest.raises(ValueError, match="fingerprint mismatch"):
         run(options("infer", checkpoint))
-    with pytest.raises(ValueError, match="torch only"):
-        run(options("infer", checkpoint, "--runtime", "mlx"))
+    with pytest.raises(ValueError, match="fp32 only"):
+        run(options("infer", checkpoint, "--runtime", "mlx", "--precision", "fp16"))
 
 
 def test_focused_cli_help_and_defaults(monkeypatch, capsys):
@@ -138,3 +138,109 @@ def test_checkpoint_inference_never_uses_training_step(tmp_path, monkeypatch):
 
     monkeypatch.setattr(TorchRuntime, "step", forbidden)
     assert run(options("infer", checkpoint))["status"] == "completed"
+
+
+def test_imbalanced_quality_exposes_majority_only_predictions():
+    from runtime_bench.classification_metrics import summarize
+
+    metrics = summarize([[90, 0], [10, 0]], ["majority", "minority"])
+    assert metrics["balanced_accuracy"] == 0.5  # Accuracy alone would be 90%.
+    assert metrics["macro_f1"] == pytest.approx((180 / 190) / 2)
+    assert metrics["per_class"][1]["precision"] is None
+    assert metrics["per_class"][1]["recall"] == 0
+    missing = summarize([[5, 0], [0, 0]], ["present", "absent"])
+    assert missing["missing_evaluation_labels"] == ["absent"]
+    assert missing["per_class"][1]["recall"] is None
+    assert missing["balanced_accuracy"] == 1
+    assert missing["macro_f1"] == 0.5
+
+
+@pytest.mark.parametrize(
+    "header,row,features,message",
+    [
+        ("label,x,x", "0,1,2", "x", "headers must be unique"),
+        ("label,x", "0,1", "x,x", "nonempty and unique"),
+        ("label,x", "0,1,2", "x", "same number of fields"),
+        ("label,x", "0", "x", "same number of fields"),
+    ],
+)
+def test_csv_schema_errors_are_actionable(tmp_path, header, row, features, message):
+    path = tmp_path / "bad.csv"
+    path.write_text(header + "\n" + row + "\n")
+    with pytest.raises(ValueError, match=message):
+        run(
+            options(
+                "train",
+                tmp_path / "bad.pt",
+                "--data",
+                str(path),
+                "--target",
+                "label",
+                "--features",
+                features,
+            )
+        )
+
+
+@pytest.mark.mlx
+@pytest.mark.parametrize("device", ["cpu", "gpu"])
+@pytest.mark.parametrize("csv_data", [False, True])
+def test_native_mlx_checkpoint_interchange(tmp_path, device, csv_data):
+    """Exercise both checkpoint directions, both MLP shapes and both MLX devices."""
+    data = []
+    training = []
+    if csv_data:
+        path = tmp_path / "data.csv"
+        path.write_text("label,x,z\n" + "".join(f"{i % 3},{i},{i % 7}\n" for i in range(120)))
+        data = ["--data", str(path)]
+        training = [*data, "--target", "label", "--features", "x,z"]
+    torch_path, mlx_path = tmp_path / "torch.pt", tmp_path / "mlx.pt"
+    torch_train = run(options("train", torch_path, *training))
+    mlx_infer = run(options("infer", torch_path, *data, "--runtime", "mlx", "--device", device))
+    assert mlx_infer["quality"]["accuracy"] == torch_train["quality"]["accuracy"]
+    assert mlx_infer["quality"]["cross_entropy"] == pytest.approx(
+        torch_train["quality"]["cross_entropy"], abs=1e-6
+    )
+    mlx_train = run(options("train", mlx_path, *training, "--runtime", "mlx", "--device", device))
+    assert mlx_train["trials"][0]["final_loss"] == mlx_train["trials"][1]["final_loss"]
+    payload = load_checkpoint(mlx_path)
+    assert payload["weights_sha256"] != mlx_train["dataset"]["initial_weights_sha256"]
+    torch_infer = run(options("infer", mlx_path, *data))
+    assert torch_infer["quality"]["confusion_matrix"] == mlx_train["quality"]["confusion_matrix"]
+    assert torch_infer["quality"]["cross_entropy"] == pytest.approx(
+        mlx_train["quality"]["cross_entropy"], abs=1e-6
+    )
+    # A canonical checkpoint can be compared across adapters without path-based identity.
+    a = run(options("infer", torch_path, *data))
+    assert a["experiment_id"] == mlx_infer["experiment_id"]
+    assert compare(a, mlx_infer)["balanced_accuracy_change"] == 0
+
+
+def test_legacy_checkpoint_and_majority_baseline(tmp_path):
+    checkpoint = tmp_path / "legacy.pt"
+    train = run(options("train", checkpoint))
+    distribution = train["dataset"]["class_distribution"]
+    assert sum(distribution["train"]) == 800
+    assert sum(distribution["test"]) == train["quality"]["evaluation_rows"] == 224
+    majority = train["dataset"]["train_majority_class"]
+    assert train["quality"]["majority_baseline_accuracy"] == distribution["test"][majority] / 224
+    assert train["quality"]["accuracy_above_majority_baseline"] == (
+        train["quality"]["accuracy"] - train["quality"]["majority_baseline_accuracy"]
+    )
+    payload = load_checkpoint(checkpoint)
+    for key in ("labels", "class_distribution", "train_majority_class"):
+        payload["dataset"].pop(key, None)
+    torch.save(payload, checkpoint)
+    assert run(options("infer", checkpoint))["quality"] == train["quality"]
+
+
+def test_corrupt_preprocessing_is_rejected(tmp_path):
+    path = tmp_path / "data.csv"
+    path.write_text("label,x\n" + "".join(f"{i % 2},{i}\n" for i in range(40)))
+    checkpoint = tmp_path / "model.pt"
+    run(options("train", checkpoint, "--data", str(path), "--target", "label", "--features", "x"))
+    payload = load_checkpoint(checkpoint)
+    payload["dataset"]["preprocessing"]["mean"] = [float("nan")]
+    torch.save(payload, checkpoint)
+    with pytest.raises(ValueError, match="non-finite"):
+        run(options("infer", checkpoint, "--data", str(path)))

@@ -45,7 +45,7 @@ The offline tests use tiny BERT fixtures; they do not validate every external ch
 | sklearn | `classify` | `cpu`, `auto` → CPU | `cpu` or `cuda`, plus `pipeline` | FP32 setting only |
 | PyTorch learning adapters | `coffee`, `smoke`, `news`, `stateful` | `cpu`, `cuda`, `mps`, `auto` | `cpu` or `cuda` | FP32; FP16/BF16 on compatible CUDA |
 | PyTorch Transformers adapter | `embeddings`, `infer`, `finetune` | `cpu`, `cuda`, `mps`, `auto` | `cpu` or `cuda`, plus `pipeline` | FP32; FP16/BF16 on compatible CUDA |
-| MLX learning adapter | `coffee`, `smoke` | `cpu`, `gpu`, `auto` → Apple GPU | `cpu` plus `mlx` | FP32 |
+| MLX learning adapter | `classification train/infer`, `coffee`, `smoke` | `cpu`, `gpu`, `auto` → Apple GPU | `cpu` plus `mlx` | FP32 |
 
 `classify` uses the default `--runtime torch` entry point but reports `runtime=sklearn`.
 There is no `--runtime sklearn`. MLX requires native Apple Silicon macOS; its `gpu`

@@ -35,7 +35,7 @@ def parser():
         "--runtime",
         choices=["torch", "mlx"],
         default="torch",
-        help="Execution adapter (default: torch); mlx supports coffee/smoke only",
+        help="Execution adapter (default: torch); mlx supports classification/coffee/smoke",
     )
     p.add_argument(
         "--device",
@@ -261,6 +261,7 @@ def classification_parser():
     )
     modes = p.add_subparsers(dest="mode", required=True)
     shared = {
+        "runtime",
         "device",
         "precision",
         "batch",
@@ -300,6 +301,8 @@ def classification_parser():
                 kwargs.update(type=action.type, choices=action.choices)
             focused_help = {
                 "data": "Original labeled CSV; omit for the synthetic fixture",
+                "runtime": "Execution adapter: torch or native Apple MLX (FP32)",
+                "device": "Torch: cpu/cuda/mps; MLX: cpu/gpu; auto is runtime-specific",
                 "steps": "Measured batches per reset trial",
                 "warmup": "Discarded warmup batches before each measured trial",
                 "repeats": "Independent trials, each reset to the same starting weights",
@@ -309,7 +312,7 @@ def classification_parser():
             if action.dest in ("warmup", "repeats"):
                 kwargs["default"] = 5 if action.dest == "warmup" else 3
             if action.dest == "device":
-                kwargs["choices"] = ["auto", "cpu", "cuda", "mps"]
+                kwargs["choices"] = ["auto", "cpu", "cuda", "mps", "gpu"]
             if action.dest == "checkpoint":
                 kwargs["required"] = mode == "infer"
                 kwargs["help"] = (
@@ -323,7 +326,7 @@ def classification_parser():
                 else "reports"
                 if action.dest in ("output", "node", "condition")
                 else "execution"
-                if action.dest in ("device", "precision", "threads")
+                if action.dest in ("runtime", "device", "precision", "threads")
                 else "budget"
             )
             groups[group].add_argument(*action.option_strings, **kwargs)

@@ -77,7 +77,7 @@ def compare(baseline, candidate):
         result[f"{label}_throughput_cv"] = (
             statistics.stdev(rates) / statistics.mean(rates) if len(rates) > 1 else None
         )
-    for key in ("accuracy", "cross_entropy"):
+    for key in ("accuracy", "cross_entropy", "balanced_accuracy", "macro_f1", "weighted_f1"):
         a, b = baseline["quality"].get(key), candidate["quality"].get(key)
         result[f"{key}_change"] = b - a if a is not None and b is not None else None
     return result

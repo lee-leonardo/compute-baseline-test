@@ -8,6 +8,7 @@ stored preprocessing, split seed, architecture, and trained weights.
 import pickle
 from datetime import datetime, timezone
 
+import numpy as np
 import torch
 
 from .operational import fingerprint
@@ -16,8 +17,6 @@ from .workloads import coffee, digest, synthetic
 
 def validate(args):
     """Reject incompatible backends and incomplete lifecycle requests before work."""
-    if args.runtime != "torch":
-        raise ValueError("Classification checkpoints currently support --runtime torch only")
     if args.model is not None:
         raise ValueError("Classification uses its own MLP; use --checkpoint, not --model")
     if args.mode == "infer" and args.checkpoint is None:
@@ -79,7 +78,17 @@ def prepare(args):
         metadata["synthetic"] = args.synthetic_data
     else:
         model, train, test, metadata = synthetic(args)
+        metadata["labels"] = ["0", "1"]
         metadata.update(train_rows=len(train[0]), test_rows=len(test[0]))
+    classes = len(metadata["labels"])
+    train_counts = np.bincount(train[1].numpy(), minlength=classes)
+    test_counts = np.bincount(test[1].numpy(), minlength=classes)
+    metadata["class_distribution"] = {
+        "labels": metadata["labels"],
+        "train": train_counts.tolist(),
+        "test": test_counts.tolist(),
+    }
+    metadata["train_majority_class"] = int(train_counts.argmax())
     if payload:
         model.load_state_dict(payload["state_dict"], strict=True)
         if fingerprint(model) != payload["weights_sha256"]:

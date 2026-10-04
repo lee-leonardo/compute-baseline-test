@@ -44,7 +44,9 @@ system to invoke after clone and `uv sync --locked`. It writes successful result
 resource context for capability boundaries.
 Synthetic workloads make offline smoke checks possible; real datasets are explicit local inputs.
 
-MLX supports coffee/smoke MLPs in FP32. Canonical CPU weights are copied into MLX and
+MLX supports classification/coffee/smoke MLPs in FP32. Classification adapters expose
+prediction, scoring, and canonical CPU model export so the harness never reads MLX
+weights directly. `classification_metrics.py` summarizes a shared confusion matrix. Canonical CPU weights are copied into MLX and
 fingerprinted before placement in either runtime. Shared timing loops force MLX lazy
 evaluation of loss, weights and optimizer state. AdamW settings, including bias correction,
 match PyTorch. Native parity tests are opt-in. See [ADR 0002](adr/0002-mlx-runtime.md)

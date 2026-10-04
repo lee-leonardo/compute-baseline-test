@@ -18,7 +18,7 @@ See [hardware coverage](hardware.md).
 | `infer` | Pretrained DistilBERT or BERT fill-mask requests | Local model latency, throughput and memory |
 | `finetune` | Full-model pretrained Transformer training on AG News labels | Backward/optimizer cost and capacity limits |
 
-MLX remains an optional Apple variant of the coffee/smoke MLPs. The original small
+MLX supports the classification checkpoint lifecycle and the coffee/smoke MLPs. The original small
 Transformer and streaming task remain useful learning examples; they are not the main
 operational ladder. See the [MLX walkthrough](mlx-example.md).
 

@@ -11,7 +11,8 @@ Architecture: **harness → runtime adapter → workload → report**.
 
 | Step | Command/task | Representative work |
 | --- | --- | --- |
-| 1 | `classify` | sklearn CPU classification, synthetic or coffee CSV |
+| 1 | `classification train/infer` | No | Yes | Yes (FP32) | `mlx` when selecting MLX |
+| `classify` | sklearn CPU classification, synthetic or coffee CSV |
 | 2 | `embeddings` | Text cleanup/tokenization + pretrained MiniLM embeddings |
 | 3 | `infer` | Pretrained DistilBERT/BERT fill-mask inference |
 | 4 | `finetune` | Full-model fine-tuning on news labels |
@@ -51,7 +52,7 @@ An implemented path still requires compatible hardware, drivers and native verif
 
 `classify` is the sklearn CPU baseline even with `--device auto`. There is no
 `--runtime sklearn` option. Installing `--extra mlx` does not change that task into an
-MLX neural network. For a classification workload implemented in MLX, choose `smoke`
+MLX neural network. Use `classification train/infer` for portable trained checkpoints, or `smoke`
 (synthetic MLP) or `coffee` (MLP with explicit CSV target/features).
 
 ```sh
@@ -69,7 +70,7 @@ then MPS, then CPU; MLX selects the Apple GPU and fails if it is unavailable.
 
 | Configuration | Current execution path |
 | --- | --- |
-| Apple Silicon GPU | PyTorch MPS; optional MLX for coffee/smoke MLPs |
+| Apple Silicon GPU | PyTorch MPS; optional MLX for classification/coffee/smoke MLPs |
 | NVIDIA RTX GPU | PyTorch CUDA; optional NVIDIA resource counters |
 | AMD, Intel or Apple CPU | CPU workloads with the available packages on that host |
 | AMD GPU | Future extension; ROCm is not configured or validated in this repo |

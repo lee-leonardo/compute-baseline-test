@@ -76,6 +76,18 @@ class TorchRuntime:
         ):
             return self.model(x)
 
+    def prediction_loss(self, logits, y):
+        """Score already materialized predictions outside the measured forward pass."""
+        return torch.nn.functional.cross_entropy(logits.float(), y).item()
+
+    def predicted_labels(self, logits):
+        """Return class indices on CPU for runtime-independent quality aggregation."""
+        return logits.argmax(-1).detach().cpu().numpy()
+
+    def export_model(self):
+        """Return an independent CPU model in the canonical checkpoint layout."""
+        return copy.deepcopy(self.model).cpu()
+
     def synchronize(self):
         synchronize(self.device)
 

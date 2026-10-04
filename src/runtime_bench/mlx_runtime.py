@@ -1,5 +1,6 @@
 """Optional Apple MLX runtime with explicit lazy evaluation boundaries."""
 
+import copy
 import importlib.metadata
 import platform
 
@@ -10,9 +11,9 @@ from .hardware import identify
 
 
 def validate(args):
-    if args.task not in ("coffee", "smoke"):
+    if args.task not in ("coffee", "smoke", "classification"):
         raise ValueError(
-            "MLX example supports coffee and smoke; use --runtime torch for news/stateful"
+            "MLX example supports coffee and smoke plus classification; use --runtime torch for news/stateful"
         )
     if args.precision != "fp32":
         raise ValueError("The MLX example supports fp32 only for matched PyTorch comparisons")
@@ -80,6 +81,39 @@ class MLXRuntime:
             loss = self.loss_fn(self.model, x, y)
             self.mx.eval(loss)
         return self.mx.stop_gradient(loss)
+
+    def predict(self, x):
+        """Materialize logits so lazy execution is included in prediction timing."""
+        logits = self.model(x)
+        self.mx.eval(logits)
+        return logits
+
+    def prediction_loss(self, logits, y):
+        """Score saved predictions outside the measured forward pass."""
+        loss = self.nn.losses.cross_entropy(logits, y, reduction="mean")
+        self.mx.eval(loss)
+        return loss.item()
+
+    def predicted_labels(self, logits):
+        """Return CPU class indices for the common evaluation metrics."""
+        labels = self.mx.argmax(logits, axis=-1)
+        self.mx.eval(labels)
+        return np.array(labels)
+
+    def export_model(self):
+        """Copy trained MLX weights into the canonical CPU PyTorch layer layout.
+
+        Both linear implementations use (output, input) weights. Never mutate
+        the reference model: it remains the starting point for trial resets.
+        """
+        self.mx.eval(self.model.parameters())
+        model = copy.deepcopy(self.reference).cpu()
+        with torch.no_grad():
+            for target, source in zip(model, self.model.layers, strict=True):
+                if isinstance(target, torch.nn.Linear):
+                    target.weight.copy_(torch.from_numpy(np.array(source.weight)))
+                    target.bias.copy_(torch.from_numpy(np.array(source.bias)))
+        return model
 
     def synchronize(self):
         self.mx.synchronize()

@@ -27,11 +27,12 @@ uv run --locked --extra cpu runtime-bench suite --help
 
 ## Classification options
 
-The focused classification commands omit NLP, MLX, and sequence-model flags.
+The focused classification commands omit NLP and sequence-model flags.
 
 | Option | Meaning |
 | --- | --- |
-| `--device cpu/cuda/mps/auto` | PyTorch execution device; explicit unavailable devices fail |
+| `--runtime torch/mlx` | PyTorch (default), or native Apple MLX in FP32 |
+| `--device cpu/cuda/mps/gpu/auto` | PyTorch uses cpu/cuda/mps; MLX uses cpu/gpu; explicit unavailable devices fail |
 | `--checkpoint PATH` | Train: new output file (default timestamped file in results); infer: required input |
 | `--data PATH` | Labeled numeric-feature CSV; omit for reproducible synthetic data |
 | `--target NAME`, `--features A,B` | Required for CSV training; restored from checkpoint for inference |
@@ -62,7 +63,7 @@ Existing `runtime-bench smoke ...`, `runtime-bench infer ...` and the
 it is distinct from the new `classification` MLP lifecycle.
 
 Manifests still use flat fields: `task = "classification"`, `mode = "train"` or
-`"infer"`, and `checkpoint = "results/model.pt"`. Use `runtime = "torch"`.
+`"infer"`, and `checkpoint = "results/model.pt"`. Use `runtime = "torch"` or `"mlx"` with the corresponding device.
 Inference restores width, seed, feature selection and synthetic labeling from the
 checkpoint, even if those fields appear in a flat manifest. Focused inference help
 omits those overrides entirely. Legacy examples still allow initialized-weight inference;

@@ -21,3 +21,6 @@ loss computation; held-out scoring remains outside timed loops. Checkpoint writi
 outside reported workload wall time but inside resource sampling. No optimizer resume,
 unlabeled serving, or MLX checkpoint conversion is implied. The sklearn baseline and
 legacy initialized-weight learning examples remain separate tasks.
+
+MLX checkpoint support was subsequently added by [ADR 0008](0008-classification-extension.md).
+The original PyTorch-only restriction above records the initial tranche's scope.

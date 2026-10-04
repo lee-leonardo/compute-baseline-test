@@ -28,7 +28,8 @@ uv run --locked --extra cuda runtime-bench smoke --runtime torch --device cuda
 ```
 
 The default is FP32 training. `--mode infer` measures execution of the randomly initialized
-model, not inference from a trained checkpoint. MLX currently supports **coffee and smoke**;
+model, not inference from a trained checkpoint. MLX also supports **classification train/infer** with portable trained checkpoints;
+see the [classification workflow](classification.md). The legacy examples support **coffee and smoke**;
 news and stateful remain PyTorch workloads. Use the same target/features for coffee runs:
 
 ```sh

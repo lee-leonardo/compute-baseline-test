@@ -10,6 +10,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import psutil
 import torch
 
@@ -84,7 +85,7 @@ def run_micro(args):
         total = time.perf_counter() - trial_start
         if prediction_only:
             # Scoring is outside timed inference; the full held-out split is scored below.
-            loss_values = [torch.nn.functional.cross_entropy(predictions.float(), y).item()]
+            loss_values = [runtime.prediction_loss(predictions, y)]
         else:
             loss_values = runtime.losses(losses)
         final_loss = loss_values[-1]
@@ -106,13 +107,27 @@ def run_micro(args):
         )
     runtime.begin_evaluation()
     correct, count, loss_sum = 0, 0, 0.0
+    confusion = (
+        np.zeros((len(metadata["labels"]), len(metadata["labels"])), dtype=np.int64)
+        if args.task == "classification"
+        else None
+    )
     iterations = len(test[0]) if stateful else (len(test[0]) + args.batch - 1) // args.batch
     for i in range(iterations):
         if stateful:
             x, y = batch(test, i)
         else:
             x, y = (t[i * args.batch : (i + 1) * args.batch] for t in test)
-        batch_correct, batch_count, batch_loss = runtime.score(*runtime.prepare(x, y))
+        if confusion is not None:
+            prepared_x, prepared_y = runtime.prepare(x, y)
+            logits = runtime.predict(prepared_x)
+            predicted = runtime.predicted_labels(logits)
+            batch_loss = runtime.prediction_loss(logits, prepared_y)
+            actual = y.numpy()
+            np.add.at(confusion, (actual, predicted), 1)
+            batch_correct, batch_count = int((actual == predicted).sum()), len(actual)
+        else:
+            batch_correct, batch_count, batch_loss = runtime.score(*runtime.prepare(x, y))
         if stateful and i == 0:
             continue  # No preceding chunk exists at the start of a stream.
         correct += batch_correct
@@ -142,8 +157,16 @@ def run_micro(args):
     if args.task == "classification":
         result["protocol"] = "classification-v1"
         result["dataset"]["timed_split"] = "train" if args.mode == "train" else "test"
+        from .classification_metrics import summarize
+
+        result["quality"].update(summarize(confusion, metadata["labels"]))
+        majority = metadata["train_majority_class"]
+        result["quality"]["majority_baseline_accuracy"] = float(confusion.sum(1)[majority] / count)
+        result["quality"]["accuracy_above_majority_baseline"] = (
+            result["quality"]["accuracy"] - result["quality"]["majority_baseline_accuracy"]
+        )
         if args.mode == "train":
             from .classification import save_checkpoint
 
-            result["checkpoint"] = save_checkpoint(args, runtime.model, metadata)
+            result["checkpoint"] = save_checkpoint(args, runtime.export_model(), metadata)
     return result

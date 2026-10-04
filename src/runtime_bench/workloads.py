@@ -34,8 +34,16 @@ def coffee(args, preprocessing=None):
             "coffee requires --data, --target and --features (explicit, leakage-safe columns)"
         )
     with open(args.data, newline="", encoding="utf-8-sig") as handle:
-        rows = list(csv.DictReader(handle))
-    features = args.features.split(",")
+        reader = csv.DictReader(handle)
+        headers = reader.fieldnames or []
+        if len(set(headers)) != len(headers):
+            raise ValueError("CSV headers must be unique")
+        rows = list(reader)
+    features = [name.strip() for name in args.features.split(",")]
+    if not all(features) or len(set(features)) != len(features):
+        raise ValueError("Feature names must be nonempty and unique")
+    if any(None in row or any(value is None for value in row.values()) for row in rows):
+        raise ValueError("CSV rows must have the same number of fields as the header")
     if args.target in features:
         raise ValueError("Target must not appear in features")
     if not rows or any(c not in rows[0] for c in [args.target, *features]):
@@ -64,6 +72,20 @@ def coffee(args, preprocessing=None):
     x = np.array([[number(r[c]) for c in features] for r in rows], dtype=np.float32)
     if np.isnan(x[train]).all(axis=0).any():
         raise ValueError("A feature has no finite training values")
+    if preprocessing is not None:
+        if (
+            not isinstance(preprocessing, dict)
+            or not {"median", "mean", "std"} <= preprocessing.keys()
+        ):
+            raise ValueError("Checkpoint preprocessing requires median, mean and std")
+        for key in ("median", "mean", "std"):
+            stats = np.asarray(preprocessing[key], dtype=np.float32)
+            if stats.shape != (len(features),) or not np.isfinite(stats).all():
+                raise ValueError(
+                    "Checkpoint preprocessing has invalid dimensions or non-finite values"
+                )
+        if (np.asarray(preprocessing["std"]) < 0).any():
+            raise ValueError("Checkpoint preprocessing standard deviations must be nonnegative")
     median = (
         np.nanmedian(x[train], axis=0)
         if preprocessing is None
