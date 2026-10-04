@@ -1,242 +1,266 @@
 #!/usr/bin/env bash
+# Build a reproducible, machine-local performance profile. This script expands
+# only supported runtime/device/precision combinations; an explicit accelerator
+# is never replaced with CPU.
 set -euo pipefail
 
-# Usage:
-#   bash example-matrix.sh cpu
-#   bash example-matrix.sh apple
-#   bash example-matrix.sh cuda
-#
-# Optional coffee data:
-#   COFFEE_CSV=data/coffee.csv \
-#   COFFEE_TARGET=quality_category \
-#   COFFEE_FEATURES=acidity,aroma,body \
-#     bash example-matrix.sh apple
-#
-# Increase work after the small reference runs succeed:
-#   BATCH=8 LENGTH=128 STEPS=100 REPEATS=3 \
-#     bash example-matrix.sh apple
+usage() {
+  cat <<'EOF'
+Usage: ./run.sh [options]
 
-profile="${1:-cpu}"
+Create an isolated performance-profile matrix for one machine. The matrix
+includes lifecycle train/infer pairs, operational NLP workloads, and the small
+learning workloads supported by the selected hardware profile.
 
-BATCH="${BATCH:-4}"
-LENGTH="${LENGTH:-32}"
-STEPS="${STEPS:-3}"
-REPEATS="${REPEATS:-1}"
-LIMIT="${LIMIT:-128}"
+Required selection:
+  --profile PROFILE        cpu, apple, or cuda (default: cpu)
 
-command -v uv >/dev/null || {
-  echo "Install uv first: https://docs.astral.sh/uv/getting-started/installation/"
-  exit 1
+Matrix selection:
+  --families LIST          Comma-separated: classification,transformer,embedding,
+                           operational,micro,all (default: all)
+  --precisions SET         all or fp32. "all" adds fp16 and supported bf16 on CUDA.
+  --measurement MODE       standard or diagnostic NLP phase timing (default: standard)
+
+Work budget:
+  --batch N                Batch size (default: 4)
+  --length N               Sequence length (default: 32)
+  --width N                Learning-model width (default: 32)
+  --steps N                Measured batches per trial (default: 3)
+  --warmup N               Discarded warmup batches (default: 1)
+  --repeats N              Independently reset trials (default: 1)
+  --limit N                Maximum news rows/pairs (default: 128)
+  --seed N                 Reproducibility seed (default: 42)
+
+Labels and files:
+  --node LABEL             Public-safe machine label (default: unspecified)
+  --condition LABEL        User-managed operating condition (default: unspecified)
+  --output DIR             Parent for one new matrix directory (default: results)
+  --model-cache DIR        Cached model directory passed to NLP runs
+  --coffee-csv PATH        Optional tabular CSV for coffee cases
+  --coffee-target NAME     Categorical target column for --coffee-csv
+  --coffee-features LIST   Comma-separated numeric feature columns for --coffee-csv
+
+Control:
+  --skip-checks            Skip ruff/pytest checks; benchmark hardware is still validated.
+  --dry-run                Print the expanded plan without syncing, downloading, or running.
+  -h, --help               Show this help.
+
+Examples:
+  ./run.sh --profile cpu --node cpu-lab-a --condition idle
+  ./run.sh --profile apple --families classification,micro --batch 32 --steps 50
+  ./run.sh --profile cuda --precisions all --measurement diagnostic --repeats 3
+
+Downloads and paired-data creation occur before measured cases. Reports retain
+the actual runtime, device, data fingerprint, precision, and synthetic-data label.
+Static TOML suites and report comparison/export intentionally remain separate CLI
+operations: they need user-selected manifests or report paths rather than a machine
+profile permutation.
+EOF
 }
-[[ -f pyproject.toml ]] || {
-  echo "Run this script from the repository root."
-  exit 1
-}
 
-# Extras install packages; device/runtime arguments select execution.
+die() { echo "error: $*" >&2; exit 2; }
+require_value() { [[ $# -ge 2 ]] || die "$1 requires a value"; }
+is_positive_integer() { [[ "$1" =~ ^[1-9][0-9]*$ ]]; }
+is_nonnegative_integer() { [[ "$1" =~ ^[0-9]+$ ]]; }
+
+profile=cpu; families=all; precision_set=all; measurement=standard
+batch=4; length=32; width=32; steps=3; warmup=1; repeats=1; limit=128; seed=42
+node=unspecified; condition=unspecified; output_parent=results; model_cache=""
+coffee_csv=""; coffee_target=""; coffee_features=""; skip_checks=false; dry_run=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile|--families|--precisions|--measurement|--batch|--length|--width|--steps|--warmup|--repeats|--limit|--seed|--node|--condition|--output|--model-cache|--coffee-csv|--coffee-target|--coffee-features)
+      require_value "$@"
+      case "$1" in
+        --profile) profile="$2" ;; --families) families="$2" ;;
+        --precisions) precision_set="$2" ;; --measurement) measurement="$2" ;;
+        --batch) batch="$2" ;; --length) length="$2" ;; --width) width="$2" ;;
+        --steps) steps="$2" ;; --warmup) warmup="$2" ;; --repeats) repeats="$2" ;;
+        --limit) limit="$2" ;; --seed) seed="$2" ;; --node) node="$2" ;;
+        --condition) condition="$2" ;; --output) output_parent="$2" ;;
+        --model-cache) model_cache="$2" ;; --coffee-csv) coffee_csv="$2" ;;
+        --coffee-target) coffee_target="$2" ;; --coffee-features) coffee_features="$2" ;;
+      esac
+      shift 2 ;;
+    --skip-checks) skip_checks=true; shift ;;
+    --dry-run) dry_run=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown option: $1 (use --help)" ;;
+  esac
+done
+
+case "$profile" in cpu|apple|cuda) ;; *) die "--profile must be cpu, apple, or cuda" ;; esac
+case "$precision_set" in all|fp32) ;; *) die "--precisions must be all or fp32" ;; esac
+case "$measurement" in standard|diagnostic) ;; *) die "--measurement must be standard or diagnostic" ;; esac
+for value in "$batch" "$length" "$width" "$steps" "$warmup" "$repeats" "$limit"; do
+  is_positive_integer "$value" || die "work-budget values must be positive integers"
+done
+is_nonnegative_integer "$seed" || die "--seed must be a non-negative integer"
+if [[ -n "$coffee_csv" ]]; then
+  [[ -n "$coffee_target" && -n "$coffee_features" ]] || die "--coffee-csv requires --coffee-target and --coffee-features"
+elif [[ -n "$coffee_target$coffee_features" ]]; then
+  die "--coffee-target and --coffee-features require --coffee-csv"
+fi
+
+if [[ "$families" == all ]]; then
+  families=classification,transformer,embedding,operational,micro
+else
+  IFS=',' read -r -a selected_families <<< "$families"
+  [[ ${#selected_families[@]} -gt 0 ]] || die "--families cannot be empty"
+  for family in "${selected_families[@]}"; do
+    case "$family" in classification|transformer|embedding|operational|micro) ;; *) die "unsupported family in --families: $family" ;; esac
+  done
+fi
+has_family() { [[ ",$families," == *",$1,"* ]]; }
+
+command -v uv >/dev/null || die "install uv first: https://docs.astral.sh/uv/getting-started/installation/"
+[[ -f pyproject.toml ]] || die "run this script from the repository root"
 case "$profile" in
-  cpu)
-    extras=(--extra cpu --extra pipeline)
-    devices=(cpu)
-    ;;
-  apple)
-    extras=(--extra cpu --extra pipeline --extra mlx)
-    devices=(cpu mps)
-    ;;
-  cuda)
-    extras=(--extra cuda --extra pipeline)
-    devices=(cpu cuda)
-    ;;
-  *)
-    echo "Profile must be cpu, apple, or cuda."
-    exit 1
-    ;;
+  cpu) extras=(--extra cpu --extra pipeline); torch_devices=(cpu); mlx_devices=() ;;
+  apple) extras=(--extra cpu --extra pipeline --extra mlx); torch_devices=(cpu mps); mlx_devices=(cpu gpu) ;;
+  cuda) extras=(--extra cuda --extra pipeline); torch_devices=(cpu cuda); mlx_devices=() ;;
 esac
-
-uv sync --locked "${extras[@]}" --group dev
 UV=(uv run --locked "${extras[@]}")
 
-# Fail early if the requested hardware profile is unavailable.
-"${UV[@]}" python - "$profile" <<'PY'
+if [[ "$dry_run" == true ]]; then
+  out="${output_parent%/}/matrix-${profile}-DRY-RUN"
+else
+  mkdir -p "$output_parent"
+  out="$(mktemp -d "${output_parent%/}/matrix-${profile}-XXXXXX")"
+fi
+summary="$out/status.tsv"; news_data=data/ag-news.csv; pairs_data="$out/news-pairs.csv"; checkpoint_dir="$out/checkpoints"
+common=(--batch "$batch" --length "$length" --width "$width" --steps "$steps" --warmup "$warmup" --repeats "$repeats" --limit "$limit" --seed "$seed" --node "$node" --condition "$condition")
+nlp_common=(--profile "$measurement")
+[[ -n "$model_cache" ]] && nlp_common+=(--model-cache "$model_cache")
+coffee_args=(); [[ -n "$coffee_csv" ]] && coffee_args=(--data "$coffee_csv" --target "$coffee_target" --features "$coffee_features")
+
+if [[ "$dry_run" == false ]]; then
+  uv sync --locked "${extras[@]}" --group dev
+  printf 'case\tstatus\n' > "$summary"
+  # An explicit accelerator request fails here; it is never silently downgraded.
+  "${UV[@]}" python - "$profile" <<'PY'
 import platform
 import sys
 import torch
-
 profile = sys.argv[1]
 if profile == "apple":
-    assert platform.system() == "Darwin" and platform.machine() == "arm64", \
-        "The apple profile requires native Apple Silicon macOS."
+    assert platform.system() == "Darwin" and platform.machine() == "arm64", "The apple profile requires native Apple Silicon macOS."
     assert torch.backends.mps.is_available(), "PyTorch MPS is unavailable."
     import mlx.core as mx
     assert mx.metal.is_available(), "MLX Metal GPU is unavailable."
 elif profile == "cuda":
     assert torch.cuda.is_available(), "CUDA is unavailable; check the host driver."
-print("Hardware profile available:", profile)
+print(f"Hardware profile available: {profile}")
 PY
-
-# Validate the harness and adapters.
-"${UV[@]}" ruff check .
-"${UV[@]}" ruff format --check .
-if [[ "$profile" == apple ]]; then
-  "${UV[@]}" pytest --run-mlx
-else
-  "${UV[@]}" pytest
-fi
-
-# Acquisition happens before benchmarking. No model server is started.
-# Reuses the local cache when already downloaded.
-for asset in news minilm distilbert bert; do
-  "${UV[@]}" runtime-bench-fetch "$asset"
-done
-
-# Make a small real-data subset for the learning "news" task.
-# That task reads the whole supplied CSV; --limit does not constrain it.
-NEWS_SMALL="$("${UV[@]}" python - "$LIMIT" <<'PY'
-import csv
-import itertools
-import sys
-import tempfile
-
-with open("data/ag-news.csv", newline="", encoding="utf-8") as source:
-    with tempfile.NamedTemporaryFile(
-        mode="w", newline="", encoding="utf-8",
-        dir="data", prefix="news-example-", suffix=".csv", delete=False
-    ) as target:
-        csv.writer(target).writerows(
-            itertools.islice(csv.reader(source), int(sys.argv[1]))
-        )
-        print(target.name)
-PY
-)"
-
-# Separate directory for this invocation, including logs and JSON reports.
-mkdir -p results
-OUT="$(mktemp -d "results/example-${profile}-XXXXXX")"
-SUMMARY="$OUT/status.tsv"
-printf 'case\tstatus\n' > "$SUMMARY"
-
-common=(
-  --batch "$BATCH"
-  --length "$LENGTH"
-  --width 32
-  --steps "$STEPS"
-  --warmup 1
-  --repeats "$REPEATS"
-  --limit "$LIMIT"
-  --seed 42
-)
-
-failures=0
-
-# Keep running after an individual workload failure.
-# Logs retain the error; the CLI also writes a failure report when possible.
-run_case() {
-  local name="$1"
-  shift
-  mkdir -p "$OUT/$name"
-  echo "Running: $name"
-
-  if "${UV[@]}" runtime-bench "$@" \
-      "${common[@]}" --output "$OUT/$name" \
-      >"$OUT/$name/console.log" 2>&1; then
-    printf '%s\tPASS\n' "$name" >> "$SUMMARY"
-  else
-    printf '%s\tFAIL\n' "$name" >> "$SUMMARY"
-    failures=$((failures + 1))
-    echo "  Failed; inspect $OUT/$name/console.log"
-  fi
-}
-
-coffee_args=()
-if [[ -n "${COFFEE_CSV:-}" ]]; then
-  : "${COFFEE_TARGET:?Set COFFEE_TARGET to a categorical target column}"
-  : "${COFFEE_FEATURES:?Set COFFEE_FEATURES to comma-separated numeric columns}"
-  coffee_args=(
-    --data "$COFFEE_CSV"
-    --target "$COFFEE_TARGET"
-    --features "$COFFEE_FEATURES"
-  )
-fi
-
-# sklearn is CPU-only, regardless of the installed accelerator packages.
-run_case classify-synthetic classify --runtime torch --device cpu
-if [[ ${#coffee_args[@]} -gt 0 ]]; then
-  run_case classify-coffee classify \
-    --runtime torch --device cpu "${coffee_args[@]}"
-else
-  echo "Skipping coffee cases: no COFFEE_CSV supplied."
-fi
-
-for device in "${devices[@]}"; do
-  precisions=(fp32)
-
-  if [[ "$device" == cuda ]]; then
-    precisions+=(fp16)
-    if "${UV[@]}" python -c \
-      'import torch; raise SystemExit(0 if torch.cuda.is_bf16_supported() else 1)'
-    then
-      precisions+=(bf16)
-    else
-      echo "Skipping BF16: selected CUDA device does not support it."
+  printf 'accelerator-preflight\tPASS\n' >> "$summary"
+  if [[ "$skip_checks" == false ]]; then
+    echo "Running static checks and CPU-oriented tests (separate from native accelerator cases)."
+    "${UV[@]}" ruff check .; "${UV[@]}" ruff format --check .; "${UV[@]}" pytest
+    printf 'development-checks\tPASS\n' >> "$summary"
+    if [[ "$profile" == apple ]]; then
+      echo "Running opt-in native MLX verification separately."
+      "${UV[@]}" pytest --run-mlx
+      printf 'native-mlx-tests\tPASS\n' >> "$summary"
     fi
   fi
+  # Acquisition and paired-data creation are deliberately outside timed cases.
+  # A partial family selection does not fetch unrelated public checkpoints.
+  if has_family embedding || has_family operational || has_family micro; then
+    "${UV[@]}" runtime-bench fetch news
+  fi
+  if has_family embedding; then
+    "${UV[@]}" runtime-bench fetch minilm
+    "${UV[@]}" runtime-bench embedding pairs --data "$news_data" --output "$pairs_data" --limit "$limit"
+  fi
+  if has_family operational; then
+    for asset in minilm distilbert bert; do "${UV[@]}" runtime-bench fetch "$asset"; done
+  fi
+  mkdir -p "$checkpoint_dir"
+else
+  echo "Dry run: no environment, hardware, assets, or workloads will be touched."
+  mkdir -p "$out"; printf 'case\tstatus\n' > "$summary"
+fi
 
-  for precision in "${precisions[@]}"; do
-    backend=(--runtime torch --device "$device" --precision "$precision")
+failures=0
+run_case() {
+  local name="$1"; shift
+  local destination="$out/$name"
+  if [[ "$dry_run" == true ]]; then
+    printf 'PLAN\t%s\n' "${UV[*]} runtime-bench $* ${common[*]} --output $destination"
+    printf '%s\tPLAN\n' "$name" >> "$summary"; return
+  fi
+  mkdir -p "$destination"; echo "Running: $name"
+  if "${UV[@]}" runtime-bench "$@" "${common[@]}" --output "$destination" >"$destination/console.log" 2>&1; then
+    printf '%s\tPASS\n' "$name" >> "$summary"
+  else
+    printf '%s\tFAIL\n' "$name" >> "$summary"; failures=$((failures + 1)); echo "  Failed; inspect $destination/console.log"
+  fi
+}
+torch_precisions() {
+  local device="$1"
+  if [[ "$device" != cuda || "$precision_set" == fp32 ]]; then printf '%s\n' fp32; return; fi
+  printf '%s\n' fp32 fp16
+  if [[ "$dry_run" == true ]] || "${UV[@]}" python -c 'import torch; raise SystemExit(not torch.cuda.is_bf16_supported())'; then printf '%s\n' bf16; else echo "Skipping BF16: selected CUDA device does not support it."; fi
+}
 
-    # Pretrained embeddings: all three encoders, with mean pooling.
-    for model in minilm distilbert bert; do
-      run_case "embeddings-$model-$device-$precision" embeddings \
-        "${backend[@]}" --model "$model" --data data/ag-news.csv
-    done
-
-    # Pretrained fill-mask inference: MiniLM is deliberately excluded.
-    for model in distilbert bert; do
-      run_case "infer-$model-$device-$precision" infer \
-        "${backend[@]}" --model "$model" --data data/ag-news.csv
-    done
-
-    # Full-model training with a new four-class classification head.
-    for model in minilm distilbert bert; do
-      run_case "finetune-$model-$device-$precision" finetune \
-        "${backend[@]}" --model "$model" --data data/ag-news.csv
-    done
-
-    # Learning examples use freshly initialized models, not fetched weights.
-    for mode in train infer; do
-      for task in smoke stateful; do
-        run_case "$task-$mode-$device-$precision" "$task" \
-          "${backend[@]}" --mode "$mode"
-      done
-
-      run_case "news-$mode-$device-$precision" news \
-        "${backend[@]}" --mode "$mode" --data "$NEWS_SMALL"
-
-      if [[ ${#coffee_args[@]} -gt 0 ]]; then
-        run_case "coffee-$mode-$device-$precision" coffee \
-          "${backend[@]}" --mode "$mode" "${coffee_args[@]}"
+for device in "${torch_devices[@]}"; do
+  while IFS= read -r precision; do
+    backend=(--runtime torch --device "$device" --precision "$precision"); key="torch-${device}-${precision}"
+    if has_family classification; then
+      checkpoint="$checkpoint_dir/classification-$key.pt"
+      run_case "classification-train-$key" classification --mode train "${backend[@]}" --checkpoint "$checkpoint"
+      run_case "classification-infer-$key" classification --mode infer "${backend[@]}" --checkpoint "$checkpoint"
+    fi
+    if has_family transformer; then
+      checkpoint="$checkpoint_dir/transformer-$key.pt"
+      run_case "transformer-train-$key" transformer --mode train "${backend[@]}" --checkpoint "$checkpoint"
+      run_case "transformer-infer-$key" transformer --mode infer "${backend[@]}" --checkpoint "$checkpoint"
+    fi
+    if has_family embedding; then
+      checkpoint="$checkpoint_dir/embedding-$key"
+      run_case "embedding-train-$key" embedding --mode train "${backend[@]}" --data "$pairs_data" --checkpoint "$checkpoint" --model minilm "${nlp_common[@]}"
+      run_case "embedding-infer-$key" embedding --mode infer "${backend[@]}" --data "$pairs_data" --checkpoint "$checkpoint" "${nlp_common[@]}"
+    fi
+    if has_family operational; then
+      if [[ "$device" == cpu && "$precision" == fp32 ]]; then
+        run_case classify-synthetic classify --runtime torch --device cpu --precision fp32
+        [[ ${#coffee_args[@]} -gt 0 ]] && run_case classify-coffee classify --runtime torch --device cpu --precision fp32 "${coffee_args[@]}"
       fi
-    done
-  done
+      for model in minilm distilbert bert; do run_case "embeddings-$model-$key" embeddings "${backend[@]}" --model "$model" --data "$news_data" "${nlp_common[@]}"; done
+      for model in distilbert bert; do
+        run_case "infer-$model-$key" infer "${backend[@]}" --model "$model" --data "$news_data" "${nlp_common[@]}"
+        run_case "finetune-$model-$key" finetune "${backend[@]}" --model "$model" --data "$news_data" "${nlp_common[@]}"
+      done
+    fi
+    if has_family micro; then
+      for mode in train infer; do
+        for task in smoke stateful; do run_case "$task-$mode-$key" "$task" "${backend[@]}" --mode "$mode"; done
+        run_case "news-$mode-$key" news "${backend[@]}" --mode "$mode" --data "$news_data"
+        [[ ${#coffee_args[@]} -gt 0 ]] && run_case "coffee-$mode-$key" coffee "${backend[@]}" --mode "$mode" "${coffee_args[@]}"
+      done
+    fi
+  done < <(torch_precisions "$device")
 done
 
-# MLX supports only the matched learning MLPs, in FP32.
 if [[ "$profile" == apple ]]; then
-  for device in cpu gpu; do
-    for mode in train infer; do
-      run_case "smoke-$mode-mlx-$device" smoke \
-        --runtime mlx --device "$device" --precision fp32 --mode "$mode"
-
-      if [[ ${#coffee_args[@]} -gt 0 ]]; then
-        run_case "coffee-$mode-mlx-$device" coffee \
-          --runtime mlx --device "$device" --precision fp32 \
-          --mode "$mode" "${coffee_args[@]}"
-      fi
-    done
+  for device in "${mlx_devices[@]}"; do
+    backend=(--runtime mlx --device "$device" --precision fp32); key="mlx-${device}-fp32"
+    if has_family classification; then
+      checkpoint="$checkpoint_dir/classification-$key.pt"
+      run_case "classification-train-$key" classification --mode train "${backend[@]}" --checkpoint "$checkpoint"
+      run_case "classification-infer-$key" classification --mode infer "${backend[@]}" --checkpoint "$checkpoint"
+    fi
+    if has_family micro; then
+      for mode in train infer; do
+        run_case "smoke-$mode-$key" smoke "${backend[@]}" --mode "$mode"
+        [[ ${#coffee_args[@]} -gt 0 ]] && run_case "coffee-$mode-$key" coffee "${backend[@]}" --mode "$mode" "${coffee_args[@]}"
+      done
+    fi
   done
 fi
 
-cat "$SUMMARY"
-echo "Reports and logs: $OUT"
+cat "$summary"
+echo "Reports, logs, checkpoints, and paired-data fingerprint: $out"
 echo "Failed workload cases: $failures"
 [[ "$failures" -eq 0 ]]

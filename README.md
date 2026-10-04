@@ -8,6 +8,32 @@ Results describe a workload/runtime/device combination, not a universal hardware
 Architecture: **harness → runtime adapter → workload → report**. No model server,
 cluster, dashboard, or cloud account is required. Downloads happen before measured runs.
 
+## Build a machine performance profile
+
+[`run.sh`](run.sh) is the high-level matrix runner. It validates the selected
+hardware profile, obtains only the required local assets before timing, and expands
+every supported runtime/device/precision permutation for the requested workload
+families. Each lifecycle inference case consumes the checkpoint produced by its
+matching training case; all artifacts are isolated in one new result directory.
+
+```sh
+# Inspect the exact matrix without changing the environment or downloading assets.
+./run.sh --profile cpu --dry-run
+
+# Profile every supported CPU permutation with public-safe context labels.
+./run.sh --profile cpu --node cpu-lab-a --condition idle
+
+# Restrict a native CUDA profile to lifecycle tests and keep all supported precisions.
+./run.sh --profile cuda --families classification,transformer,embedding --precisions all
+```
+
+Use `./run.sh --help` for the work-budget, optional coffee CSV, model-cache, and
+diagnostic-NLP timing parameters. `--profile apple` runs PyTorch CPU/MPS and the
+supported MLX CPU/GPU paths; `--profile cuda` runs CPU/CUDA paths and tests BF16 only
+when the native CUDA device reports support. The script never downgrades a requested
+accelerator to CPU. Static TOML suites and comparison/export stay explicit commands,
+because they require a user-selected manifest or report paths.
+
 ## Train a classifier and reuse it
 
 ```sh
