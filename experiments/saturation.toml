@@ -1,0 +1,75 @@
+# Synthetic MLP training ladder. Thresholds are policy examples, not measurements.
+version = 1
+
+[defaults]
+task = "smoke"
+mode = "train"
+seed = 42
+steps = 20
+warmup = 2
+repeats = 3
+
+[limits]
+# Includes interpreter startup, setup, warmup, all trials, evaluation and reporting.
+timeout_seconds = 120
+min_host_available_bytes = 1073741824
+max_process_rss_bytes = 4294967296
+
+[gates]
+wall_seconds = 60
+compute_p95_ms = 250
+host_available_bytes = 1073741824
+host_swap_growth_bytes = 268435456
+process_rss_bytes = 3221225472
+
+[[profiles]]
+name = "torch-cpu-fp32"
+runtime = "torch"
+device = "cpu"
+precision = "fp32"
+threads = 4
+
+# Add only devices present on the test node; no automatic CPU fallback.
+# [[profiles]]
+# name = "torch-cuda-fp32"
+# runtime = "torch"
+# device = "cuda"
+# precision = "fp32"
+# threads = 4
+
+[[stages]]
+name = "baseline"
+[stages.options]
+batch = 8
+width = 32
+
+[[stages]]
+name = "batch-32"
+[stages.options]
+batch = 32
+width = 32
+
+[[stages]]
+name = "batch-128"
+[stages.options]
+batch = 128
+width = 32
+
+[[stages]]
+name = "width-256"
+[stages.options]
+batch = 128
+width = 256
+
+[[stages]]
+name = "width-1024"
+[stages.options]
+batch = 128
+width = 1024
+
+[[stages]]
+name = "sustained"
+[stages.options]
+batch = 128
+width = 1024
+steps = 200

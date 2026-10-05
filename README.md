@@ -108,6 +108,7 @@ Python package. MLX supports `classification`, `smoke`, and `coffee` MLPs in FP3
 - [Embedding training and inference](docs/embedding.md)
 - [Classification and checkpoint preparation](docs/classification.md)
 - [Experiment manifests and profiling workflow](docs/experiments.md)
+- [Gated saturation and compute-profile boundaries](docs/saturation.md)
 - [Installation, downloads, and individual commands](docs/installation.md)
 - [Model × task and runtime × device compatibility](docs/models-and-runtimes.md)
 - [Timing and telemetry interpretation](docs/profiling.md)

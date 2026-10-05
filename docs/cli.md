@@ -12,6 +12,7 @@
 | `classification infer` | Benchmark saved weights on the same held-out split |
 | `run TASK` | Advanced access to individual workloads and legacy examples |
 | `suite MANIFEST` | Expand a TOML experiment into isolated sequential runs |
+| `saturate plan/run/status` | Validate, execute and inspect ordered stages with per-profile stop gates |
 | `fetch ASSET` | Download news or pinned pretrained model assets before measurement |
 | `compare BASELINE CANDIDATE` | Compare compatible reports; `--capacity` shows unequal work/failures |
 | `export REPORT... --output FILE` | Flatten report files into one CSV row per trial |

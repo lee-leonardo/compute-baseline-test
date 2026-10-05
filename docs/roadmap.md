@@ -3,6 +3,11 @@
 The current tranche establishes manifests, run labels, diagnostic NLP phases, failure
 retention, and per-trial export. Review that workflow before expanding workloads.
 
+The [saturation workflow](saturation.md) adds ordered workload escalation, explicit
+compute profiles, live host-memory/time guards, and checkpoint stop evidence. It
+records policy boundaries without inferring absolute capacity. Adaptive refinement,
+throughput plateau detection and composed/concurrent workloads remain future tranches.
+
 The classification tranche is complete for the benchmark scope: synthetic/labeled CSV
 training, held-out checkpoint inference, portable PyTorch/MLX weights, class-distribution
 and imbalance-aware metrics, CSV validation, and example sweeps. See the

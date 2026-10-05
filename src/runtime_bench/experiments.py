@@ -14,7 +14,11 @@ from .cli import parser
 
 def expand(path):
     """Validate TOML options and expand sweeps before starting any child process."""
-    manifest = tomllib.loads(path.read_text())
+    return expand_manifest(tomllib.loads(path.read_text()))
+
+
+def expand_manifest(manifest):
+    """Expand an in-memory manifest using the same validation as a suite file."""
     if set(manifest) - {"version", "defaults", "cases"} or manifest.get("version") != 1:
         raise ValueError("Expected manifest version=1 with defaults and cases")
     defaults = manifest.get("defaults", {})

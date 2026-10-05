@@ -117,6 +117,16 @@ def parser():
     return p
 
 
+def resolve_defaults(args):
+    """Resolve workload defaults without loading data or starting a runtime."""
+    args.mode = args.mode or ("infer" if args.task in ("infer", "embeddings") else "train")
+    args.repeats = args.repeats if args.repeats is not None else (1 if args.task in TASKS else 3)
+    args.warmup = args.warmup if args.warmup is not None else (1 if args.task in TASKS else 5)
+    args.threads = (
+        args.threads if args.threads is not None else (psutil.cpu_count(logical=False) or 1)
+    )
+
+
 def run(args):
     """Resolve defaults, validate a request, sample resources, and dispatch one job."""
     if args.profile == "diagnostic" and args.task not in (
@@ -126,12 +136,7 @@ def run(args):
         "finetune",
     ):
         raise ValueError("Diagnostic phase profiling supports embeddings, infer and finetune")
-    args.mode = args.mode or ("infer" if args.task in ("infer", "embeddings") else "train")
-    args.repeats = args.repeats if args.repeats is not None else (1 if args.task in TASKS else 3)
-    args.warmup = args.warmup if args.warmup is not None else (1 if args.task in TASKS else 5)
-    args.threads = (
-        args.threads if args.threads is not None else (psutil.cpu_count(logical=False) or 1)
-    )
+    resolve_defaults(args)
     for name in ("batch", "width", "length", "steps", "repeats", "threads", "limit"):
         if getattr(args, name) < 1:
             raise ValueError(f"--{name} must be positive")
@@ -505,6 +510,7 @@ def command_parser():
         "classification": "Train a classifier or infer from a saved checkpoint",
         "run": "Run an existing workload with advanced options",
         "suite": "Run a TOML experiment manifest",
+        "saturate": "Plan, run and inspect gated hardware saturation stages",
         "fetch": "Download dataset or pretrained model assets",
         "compare": "Compare two report files",
         "export": "Export report files to per-trial CSV",
@@ -523,11 +529,12 @@ def main():
     if not argv or argv[0] in ("-h", "--help"):
         command_parser().print_help()
         return
-    if argv[0] in ("suite", "fetch", "compare", "export"):
-        from . import compare, experiments, model_specs, reporting
+    if argv[0] in ("suite", "saturate", "fetch", "compare", "export"):
+        from . import compare, experiments, model_specs, reporting, saturation
 
         entry = {
             "suite": experiments.main,
+            "saturate": saturation.main,
             "fetch": model_specs.main,
             "compare": compare.main,
             "export": reporting.main,
