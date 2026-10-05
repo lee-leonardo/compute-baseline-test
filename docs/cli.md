@@ -12,6 +12,9 @@
 | `classification infer` | Benchmark saved weights on the same held-out split |
 | `run TASK` | Advanced access to individual workloads and legacy examples |
 | `suite MANIFEST` | Expand a TOML experiment into isolated sequential runs |
+| `crossover INDEX --baseline NAME --candidate NAME` | Analyze matched one-axis crossover observations |
+| `boundary INDEX --profile NAME` | Refine a measured pass/threshold interval with bounded probes |
+| `pipeline` | Measure held-out tokenize/embed/classify requests |
 | `saturate plan/run/status` | Validate, execute and inspect ordered stages with per-profile stop gates |
 | `fetch ASSET` | Download news or pinned pretrained model assets before measurement |
 | `compare BASELINE CANDIDATE` | Compare compatible reports; `--capacity` shows unequal work/failures |

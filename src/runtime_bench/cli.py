@@ -119,7 +119,9 @@ def parser():
 
 def resolve_defaults(args):
     """Resolve workload defaults without loading data or starting a runtime."""
-    args.mode = args.mode or ("infer" if args.task in ("infer", "embeddings") else "train")
+    args.mode = args.mode or (
+        "infer" if args.task in ("infer", "embeddings", "pipeline") else "train"
+    )
     args.repeats = args.repeats if args.repeats is not None else (1 if args.task in TASKS else 3)
     args.warmup = args.warmup if args.warmup is not None else (1 if args.task in TASKS else 5)
     args.threads = (
@@ -145,7 +147,7 @@ def run(args):
     if args.task in ("news", "stateful") and args.width % 4:
         raise ValueError("--width must be divisible by 4")
     if args.task in TASKS and args.mode != (
-        "infer" if args.task in ("infer", "embeddings") else "train"
+        "infer" if args.task in ("infer", "embeddings", "pipeline") else "train"
     ):
         raise ValueError("The selected ladder task has a fixed mode; omit --mode")
     if args.runtime == "torch" and os.getenv("PYTORCH_ENABLE_MPS_FALLBACK") == "1":
@@ -509,6 +511,9 @@ def command_parser():
         "embedding": "Train a paired-text encoder or infer from its checkpoint",
         "classification": "Train a classifier or infer from a saved checkpoint",
         "run": "Run an existing workload with advanced options",
+        "pipeline": "Run bounded tokenize/embed/classify requests",
+        "crossover": "Analyze matched profile crossover observations",
+        "boundary": "Refine a measured policy-boundary interval",
         "suite": "Run a TOML experiment manifest",
         "saturate": "Plan, run and inspect gated hardware saturation stages",
         "fetch": "Download dataset or pretrained model assets",
@@ -529,12 +534,14 @@ def main():
     if not argv or argv[0] in ("-h", "--help"):
         command_parser().print_help()
         return
-    if argv[0] in ("suite", "saturate", "fetch", "compare", "export"):
-        from . import compare, experiments, model_specs, reporting, saturation
+    if argv[0] in ("suite", "saturate", "crossover", "boundary", "fetch", "compare", "export"):
+        from . import compare, experiments, frontiers, model_specs, reporting, saturation
 
         entry = {
             "suite": experiments.main,
             "saturate": saturation.main,
+            "crossover": frontiers.crossover_main,
+            "boundary": frontiers.boundary_main,
             "fetch": model_specs.main,
             "compare": compare.main,
             "export": reporting.main,

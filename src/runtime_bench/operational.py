@@ -18,7 +18,7 @@ from .model_specs import resolve, select_model
 from .workloads import coffee, digest, split_indices
 
 
-TASKS = ("classify", "embeddings", "infer", "finetune")
+TASKS = ("classify", "embeddings", "infer", "finetune", "pipeline")
 
 
 def fingerprint(model):
@@ -305,6 +305,10 @@ def run(args):
         raise ValueError(
             "The workload ladder uses sklearn/PyTorch; MLX remains available for coffee/smoke"
         )
+    if args.task == "pipeline":
+        from .pipeline import run as run_pipeline
+
+        return run_pipeline(args)
     if args.task == "classify":
         return classify(args)
     return pretrained(args)

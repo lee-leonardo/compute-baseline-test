@@ -28,7 +28,7 @@ Use separate stages to change batch size, sequence length, model width or step c
 change one dimension at a time to make the resulting boundary interpretable. Stage
 settings do not inherit the preceding stage's overrides.
 
-A useful progression is baseline, increasing batch/length/width, then sustained work.
+A useful progression is a baseline followed by bounded batch/length/width stages.
 Existing flat workload options are available, including transformer training and
 local pretrained NLP workloads. Fetch assets beforehand. Training stages must omit
 `checkpoint`; lifecycle workloads create unique checkpoints in their stage output
@@ -36,9 +36,9 @@ folders. Inference may use an explicitly prepared checkpoint. Profiles own runti
 device, precision and optional CPU thread count. There are no implicit model, runtime,
 precision or device substitutions.
 
-This first workflow runs sequential workloads. It does not yet orchestrate concurrent
-services, adaptively bisect a boundary, or detect a throughput plateau. Add those only
-with explicit workload and comparison semantics.
+This workflow runs sequential workloads. See [bounded frontier workflows](frontiers.md)
+for crossover analysis, one-axis boundary refinement and representative text pipelines.
+Concurrent services and throughput plateau detection remain outside this scope.
 
 ## Checkpoints and live guards
 
@@ -56,6 +56,7 @@ compute in that child. Device-memory gates are evaluated after a stage, not live
 | Gate | Stop condition (inclusive) | Measurement scope |
 | --- | --- | --- |
 | `wall_seconds` | >= threshold | Workload report wall time, excluding interpreter startup |
+| `batch_p95_ms` | >= threshold | Worst reported trial's end-to-end request p95 |
 | `compute_p95_ms` | >= threshold | Worst reported trial's synchronized compute p95 |
 | `process_rss_bytes` | >= threshold | Sampled whole-job process RSS peak |
 | `host_available_bytes` | <= threshold | Sampled whole-host available RAM minimum |

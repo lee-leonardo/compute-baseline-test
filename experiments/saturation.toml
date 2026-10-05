@@ -66,10 +66,3 @@ name = "width-1024"
 [stages.options]
 batch = 128
 width = 1024
-
-[[stages]]
-name = "sustained"
-[stages.options]
-batch = 128
-width = 1024
-steps = 200

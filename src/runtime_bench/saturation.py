@@ -20,6 +20,7 @@ from .experiments import expand_manifest
 # Each memory domain remains independent. No inferred VRAM or utilization proxy.
 METRICS = {
     "wall_seconds": ("wall_seconds", "max"),
+    "batch_p95_ms": ("trials.batch_p95_ms", "max"),
     "compute_p95_ms": ("trials.compute_p95_ms", "max"),
     "process_rss_bytes": ("resources.process_rss_sampled_peak_bytes", "max"),
     "host_available_bytes": ("resources.host_available_ram_min_bytes", "min"),

@@ -5,8 +5,11 @@ retention, and per-trial export. Review that workflow before expanding workloads
 
 The [saturation workflow](saturation.md) adds ordered workload escalation, explicit
 compute profiles, live host-memory/time guards, and checkpoint stop evidence. It
-records policy boundaries without inferring absolute capacity. Adaptive refinement,
-throughput plateau detection and composed/concurrent workloads remain future tranches.
+records policy boundaries without inferring absolute capacity. The [bounded frontier
+workflows](frontiers.md) now add conservative crossover analysis, one-axis boundary
+refinement and a tokenize/embed/classify pipeline. Sustained stress is deferred;
+complexity and capacity ladders can follow isolated and composite observations.
+Throughput plateau detection and concurrent services remain future work.
 
 The classification tranche is complete for the benchmark scope: synthetic/labeled CSV
 training, held-out checkpoint inference, portable PyTorch/MLX weights, class-distribution

@@ -200,3 +200,27 @@ def test_diagnostic_phases_preserve_work_and_quality(task, tiny_model):
         assert 0 < sum(trial["phases"].values()) <= trial["wall_seconds"]
     with pytest.raises(ValueError, match="profile"):
         compare(standard, diagnostic)
+
+
+def test_representative_pipeline(tiny_model, tmp_path):
+    model, csv = tiny_model
+    result = run(options("pipeline", "--model", str(model), "--data", str(csv), "--synthetic-data"))
+    assert result["protocol"] == "pipeline-v1"
+    assert result["dataset"]["timed_split"] == "test"
+    assert result["dataset"]["classifier_training_rows"] == result["dataset"]["train_rows"]
+    assert result["dataset"]["synthetic"] is True
+    assert result["dataset"]["initial_weights_sha256"]
+    assert 0 <= result["quality"]["accuracy"] <= 1
+    assert len(result["trials"]) == 2
+    for trial in result["trials"]:
+        assert trial["samples_per_second"] > 0
+        assert set(trial["phases"]) == {
+            "tokenize_seconds",
+            "transfer_seconds",
+            "embed_seconds",
+            "return_to_cpu_seconds",
+            "classify_seconds",
+        }
+        assert sum(trial["phases"].values()) <= trial["wall_seconds"]
+    assert compare(result, result)["loop_throughput_gain"] == 1
+    save(result, tmp_path / "reports")

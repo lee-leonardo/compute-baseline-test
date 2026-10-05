@@ -1,0 +1,42 @@
+# Short synthetic matched-work sweep. Explicit candidate: edit for the test node.
+version = 1
+[defaults]
+task = "smoke"
+mode = "train"
+width = 128
+steps = 10
+warmup = 2
+repeats = 5
+seed = 42
+[limits]
+timeout_seconds = 60
+min_host_available_bytes = 1073741824
+[gates]
+wall_seconds = 30
+compute_p95_ms = 250
+[[profiles]]
+name = "cpu"
+runtime = "torch"
+device = "cpu"
+threads = 4
+[[profiles]]
+name = "accelerator"
+runtime = "torch"
+device = "cuda"
+threads = 4
+[[stages]]
+name = "batch-8"
+[stages.options]
+batch = 8
+[[stages]]
+name = "batch-32"
+[stages.options]
+batch = 32
+[[stages]]
+name = "batch-128"
+[stages.options]
+batch = 128
+[[stages]]
+name = "batch-512"
+[stages.options]
+batch = 512

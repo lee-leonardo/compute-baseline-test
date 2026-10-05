@@ -1,0 +1,36 @@
+# Fetch model/data first. Fixed bounded requests; no sustained stress.
+version = 1
+[defaults]
+task = "pipeline"
+mode = "infer"
+model = "minilm"
+data = "data/ag-news.csv"
+limit = 500
+length = 64
+steps = 5
+warmup = 1
+repeats = 3
+seed = 42
+[limits]
+timeout_seconds = 120
+min_host_available_bytes = 1073741824
+[gates]
+wall_seconds = 90
+batch_p95_ms = 500
+[[profiles]]
+name = "cpu"
+runtime = "torch"
+device = "cpu"
+threads = 4
+[[stages]]
+name = "batch-4"
+[stages.options]
+batch = 4
+[[stages]]
+name = "batch-16"
+[stages.options]
+batch = 16
+[[stages]]
+name = "batch-64"
+[stages.options]
+batch = 64
